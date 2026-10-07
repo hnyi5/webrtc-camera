@@ -1,0 +1,1467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Camera Monitor</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: #111318;
+            color: #e8eaed;
+            font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                Roboto,
+                Helvetica,
+                Arial,
+                sans-serif;
+        }
+
+        .app {
+            max-width: 1500px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+        }
+
+        .title {
+            font-size: 22px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+        }
+
+        .subtitle {
+            margin-top: 4px;
+            color: #8d939d;
+            font-size: 13px;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 13px;
+            border-radius: 999px;
+            background: #1b1e24;
+            border: 1px solid #2b3038;
+            font-size: 13px;
+        }
+
+        .status-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #777;
+        }
+
+        .status.connected .status-dot {
+            background: #42d392;
+        }
+
+        .status.connecting .status-dot {
+            background: #e5b84b;
+        }
+
+        .status.failed .status-dot {
+            background: #ef6464;
+        }
+
+        /* Main layout */
+        .main-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 330px;
+            gap: 18px;
+        }
+
+        .card {
+            background: #181b21;
+            border: 1px solid #282d35;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        /* Video */
+        .video-card {
+            min-width: 0;
+        }
+
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            background: #08090b;
+            aspect-ratio: 16 / 9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+            background: #08090b;
+        }
+
+        .video-overlay {
+            position: absolute;
+            left: 14px;
+            bottom: 14px;
+            display: flex;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .overlay-badge {
+            padding: 5px 9px;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #e8eaed;
+            font-size: 12px;
+            backdrop-filter: blur(4px);
+        }
+
+        .video-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 11px 14px;
+            border-top: 1px solid #282d35;
+            color: #8d939d;
+            font-size: 12px;
+        }
+
+        /* Stats panel */
+        .stats-card {
+            padding: 18px;
+        }
+
+        .section {
+            margin-bottom: 22px;
+        }
+
+        .section:last-child {
+            margin-bottom: 0;
+        }
+
+        .section-title {
+            margin-bottom: 11px;
+            color: #8d939d;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .stat-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 31px;
+            border-bottom: 1px solid #23272e;
+        }
+
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            color: #9ba1aa;
+            font-size: 13px;
+        }
+
+        .stat-value {
+            color: #edf0f2;
+            font-size: 13px;
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        .stat-value.good {
+            color: #42d392;
+        }
+
+        .stat-value.warning {
+            color: #e5b84b;
+        }
+
+        .stat-value.bad {
+            color: #ef6464;
+        }
+
+        /* Big metrics */
+        .metric-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 22px;
+        }
+
+        .metric {
+            padding: 13px;
+            border: 1px solid #282d35;
+            border-radius: 9px;
+            background: #14171c;
+        }
+
+        .metric-label {
+            color: #8d939d;
+            font-size: 11px;
+            margin-bottom: 5px;
+        }
+
+        .metric-value {
+            color: #f1f3f4;
+            font-size: 18px;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Latency */
+        .latency-card {
+            margin-top: 18px;
+            padding: 17px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .latency-title {
+            font-size: 13px;
+            color: #a5abb4;
+        }
+
+        .latency-note {
+            margin-top: 4px;
+            color: #737984;
+            font-size: 11px;
+        }
+
+        .latency-value {
+            white-space: nowrap;
+            font-size: 26px;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Log */
+        .log-card {
+            margin-top: 18px;
+        }
+
+        .log-header {
+            padding: 12px 15px;
+            border-bottom: 1px solid #282d35;
+            color: #8d939d;
+            font-size: 12px;
+        }
+
+        #log {
+            margin: 0;
+            padding: 13px 15px;
+            height: 170px;
+            overflow-y: auto;
+            background: #101216;
+            color: #8e96a3;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+            font-size: 11px;
+            line-height: 1.55;
+            white-space: pre-wrap;
+        }
+
+        /* Responsive */
+        @media (max-width: 950px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-card {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+            }
+
+            .section {
+                margin-bottom: 0;
+            }
+
+            .metric-grid {
+                margin-bottom: 0;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .app {
+                padding: 12px;
+            }
+
+            .header {
+                align-items: flex-start;
+                gap: 12px;
+            }
+
+            .stats-card {
+                display: block;
+            }
+
+            .section {
+                margin-bottom: 22px;
+            }
+
+            .latency-card {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="app">
+
+    <!-- Header -->
+    <div class="header">
+        <div>
+            <div class="title">WebRTC Camera Monitor</div>
+            <div class="subtitle">
+                Live camera stream diagnostics
+            </div>
+        </div>
+
+        <div id="connectionStatus" class="status connecting">
+            <span class="status-dot"></span>
+            <span id="connectionStatusText">CONNECTING</span>
+        </div>
+    </div>
+
+
+    <!-- Main -->
+    <div class="main-grid">
+
+        <!-- Video -->
+        <div class="card video-card">
+
+            <div class="video-wrapper">
+                <video id="video" autoplay playsinline></video>
+
+                <div class="video-overlay">
+                    <div class="overlay-badge" id="overlayResolution">
+                        -- × --
+                    </div>
+
+                    <div class="overlay-badge" id="overlayFps">
+                        -- FPS
+                    </div>
+
+                    <div class="overlay-badge">
+                        H.264
+                    </div>
+                </div>
+            </div>
+
+            <div class="video-footer">
+                <span>WebRTC remote video</span>
+                <span id="videoState">Waiting for video...</span>
+            </div>
+
+        </div>
+
+
+        <!-- Statistics -->
+        <div class="card stats-card">
+
+            <!-- Key metrics -->
+            <div class="section">
+
+                <div class="section-title">
+                    Stream
+                </div>
+
+                <div class="metric-grid">
+
+                    <div class="metric">
+                        <div class="metric-label">FPS</div>
+                        <div class="metric-value" id="fps">--</div>
+                    </div>
+
+                    <div class="metric">
+                        <div class="metric-label">Bitrate</div>
+                        <div class="metric-value" id="bitrate">--</div>
+                    </div>
+
+                    <div class="metric">
+                        <div class="metric-label">Resolution</div>
+                        <div class="metric-value" id="resolution">--</div>
+                    </div>
+
+                    <div class="metric">
+                        <div class="metric-label">Codec</div>
+                        <div class="metric-value" id="codec">--</div>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- Network -->
+            <div class="section">
+
+                <div class="section-title">
+                    Network
+                </div>
+
+                <div class="stat-row">
+                    <span class="stat-label">Packets received</span>
+                    <span class="stat-value" id="packetsReceived">--</span>
+                </div>
+
+                <div class="stat-row">
+                    <span class="stat-label">Packets lost</span>
+                    <span class="stat-value" id="packetsLost">--</span>
+                </div>
+
+                <div class="stat-row">
+                    <span class="stat-label">Packet loss</span>
+                    <span class="stat-value" id="packetLoss">--</span>
+                </div>
+
+                <div class="stat-row">
+                    <span class="stat-label">Jitter</span>
+                    <span class="stat-value" id="jitter">--</span>
+                </div>
+
+                <div class="stat-row">
+                    <span class="stat-label">RTT</span>
+                    <span class="stat-value" id="rtt">--</span>
+                </div>
+
+            </div>
+
+
+            <!-- WebRTC -->
+            <div class="section">
+
+                <div class="section-title">
+                    WebRTC
+                </div>
+
+                <div class="stat-row">
+                    <span class="stat-label">ICE gathering</span>
+                    <span class="stat-value" id="iceGathering">--</span>
+                </div>
+
+                <div class="stat-row">
+                    <span class="stat-label">ICE connection</span>
+                    <span class="stat-value" id="iceConnection">--</span>
+                </div>
+
+                <div class="stat-row">
+                    <span class="stat-label">Peer connection</span>
+                    <span class="stat-value" id="peerConnection">--</span>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- Latency -->
+    <div class="card latency-card">
+
+        <div>
+            <div class="latency-title">
+                End-to-end video latency
+            </div>
+
+            <div class="latency-note">
+                Manual measurement · camera → display
+            </div>
+        </div>
+
+        <div class="latency-value">
+            ≈ 300 ms
+        </div>
+
+    </div>
+
+
+    <!-- Log -->
+    <div class="card log-card">
+
+        <div class="log-header">
+            WebRTC Event Log
+        </div>
+
+        <pre id="log"></pre>
+
+    </div>
+
+</div>
+
+
+<script>
+
+const video = document.getElementById("video");
+const logElement = document.getElementById("log");
+
+const connectionStatus = document.getElementById("connectionStatus");
+const connectionStatusText =
+    document.getElementById("connectionStatusText");
+
+const videoState =
+    document.getElementById("videoState");
+
+const fpsElement =
+    document.getElementById("fps");
+
+const bitrateElement =
+    document.getElementById("bitrate");
+
+const resolutionElement =
+    document.getElementById("resolution");
+
+const codecElement =
+    document.getElementById("codec");
+
+const packetsReceivedElement =
+    document.getElementById("packetsReceived");
+
+const packetsLostElement =
+    document.getElementById("packetsLost");
+
+const packetLossElement =
+    document.getElementById("packetLoss");
+
+const jitterElement =
+    document.getElementById("jitter");
+
+const rttElement =
+    document.getElementById("rtt");
+
+const iceGatheringElement =
+    document.getElementById("iceGathering");
+
+const iceConnectionElement =
+    document.getElementById("iceConnection");
+
+const peerConnectionElement =
+    document.getElementById("peerConnection");
+
+const overlayResolution =
+    document.getElementById("overlayResolution");
+
+const overlayFps =
+    document.getElementById("overlayFps");
+
+
+/* -------------------------------------------------------
+   Logging
+------------------------------------------------------- */
+
+function log(message) {
+
+    console.log(message);
+
+    const timestamp =
+        new Date().toLocaleTimeString();
+
+    logElement.textContent +=
+        `[${timestamp}] ${message}\n`;
+
+    logElement.scrollTop =
+        logElement.scrollHeight;
+}
+
+
+/* -------------------------------------------------------
+   Connection status
+------------------------------------------------------- */
+
+function setConnectionStatus(state) {
+
+    connectionStatus.classList.remove(
+        "connected",
+        "connecting",
+        "failed"
+    );
+
+    connectionStatus.classList.add(state);
+
+    if (state === "connected") {
+        connectionStatusText.textContent =
+            "CONNECTED";
+    }
+    else if (state === "failed") {
+        connectionStatusText.textContent =
+            "FAILED";
+    }
+    else {
+        connectionStatusText.textContent =
+            "CONNECTING";
+    }
+}
+
+
+/* -------------------------------------------------------
+   PeerConnection
+------------------------------------------------------- */
+
+const pc = new RTCPeerConnection({
+    iceServers: []
+});
+
+
+/* -------------------------------------------------------
+   WebSocket signaling
+------------------------------------------------------- */
+
+const ws =
+    new WebSocket(
+        "ws://" + location.hostname + ":8765"
+    );
+
+let remoteDescriptionSet = false;
+
+let pendingCandidates = [];
+
+
+/* -------------------------------------------------------
+   Remote video
+------------------------------------------------------- */
+
+pc.ontrack = (event) => {
+
+    log("[WEBRTC] Remote track received");
+
+    if (event.streams && event.streams[0]) {
+
+        video.srcObject =
+            event.streams[0];
+
+        videoState.textContent =
+            "Video track received";
+    }
+};
+
+
+/* -------------------------------------------------------
+   ICE candidate
+------------------------------------------------------- */
+
+pc.onicecandidate = (event) => {
+
+    if (event.candidate) {
+
+        log("[WEBRTC] Sending ICE candidate");
+
+        ws.send(
+            JSON.stringify({
+                type: "candidate",
+                candidate:
+                    event.candidate.candidate,
+                sdpMLineIndex:
+                    event.candidate.sdpMLineIndex,
+                sdpMid:
+                    event.candidate.sdpMid
+            })
+        );
+    }
+};
+
+
+/* -------------------------------------------------------
+   Peer connection state
+------------------------------------------------------- */
+
+pc.onconnectionstatechange = () => {
+
+    const state =
+        pc.connectionState;
+
+    log(
+        "[WEBRTC] Connection state: " +
+        state
+    );
+
+    peerConnectionElement.textContent =
+        state;
+
+    if (state === "connected") {
+
+        peerConnectionElement.className =
+            "stat-value good";
+
+        setConnectionStatus("connected");
+    }
+    else if (
+        state === "failed" ||
+        state === "disconnected" ||
+        state === "closed"
+    ) {
+
+        peerConnectionElement.className =
+            "stat-value bad";
+
+        setConnectionStatus("failed");
+    }
+    else {
+
+        peerConnectionElement.className =
+            "stat-value warning";
+
+        setConnectionStatus("connecting");
+    }
+};
+
+
+/* -------------------------------------------------------
+   ICE connection state
+------------------------------------------------------- */
+
+pc.oniceconnectionstatechange = () => {
+
+    const state =
+        pc.iceConnectionState;
+
+    log(
+        "[WEBRTC] ICE state: " +
+        state
+    );
+
+    iceConnectionElement.textContent =
+        state;
+
+    if (
+        state === "connected" ||
+        state === "completed"
+    ) {
+
+        iceConnectionElement.className =
+            "stat-value good";
+    }
+    else if (
+        state === "failed" ||
+        state === "disconnected"
+    ) {
+
+        iceConnectionElement.className =
+            "stat-value bad";
+    }
+    else {
+
+        iceConnectionElement.className =
+            "stat-value warning";
+    }
+};
+
+
+/* -------------------------------------------------------
+   ICE gathering state
+------------------------------------------------------- */
+
+pc.onicegatheringstatechange = () => {
+
+    const state =
+        pc.iceGatheringState;
+
+    iceGatheringElement.textContent =
+        state;
+
+    log(
+        "[WEBRTC] ICE gathering: " +
+        state
+    );
+};
+
+
+/* -------------------------------------------------------
+   WebSocket open
+------------------------------------------------------- */
+
+ws.onopen = () => {
+
+    log(
+        "[SIGNALING] WebSocket connected"
+    );
+};
+
+
+/* -------------------------------------------------------
+   WebSocket messages
+------------------------------------------------------- */
+
+ws.onmessage = async (event) => {
+
+    const message =
+        JSON.parse(event.data);
+
+    log(
+        "[SIGNALING] Received: " +
+        message.type
+    );
+
+
+    /* ---------- OFFER ---------- */
+
+    if (message.type === "offer") {
+
+        const offer = {
+            type: "offer",
+            sdp: message.sdp
+        };
+
+        await pc.setRemoteDescription(
+            offer
+        );
+
+        remoteDescriptionSet = true;
+
+
+        /* Add candidates received early */
+
+        for (
+            const candidate
+            of pendingCandidates
+        ) {
+
+            try {
+
+                await pc.addIceCandidate(
+                    candidate
+                );
+
+            }
+            catch (error) {
+
+                console.error(
+                    "ICE candidate error:",
+                    error
+                );
+            }
+        }
+
+        pendingCandidates = [];
+
+
+        /* Create answer */
+
+        const answer =
+            await pc.createAnswer();
+
+        await pc.setLocalDescription(
+            answer
+        );
+
+
+        /* Send answer */
+
+        ws.send(
+            JSON.stringify({
+                type: "answer",
+                sdp:
+                    pc.localDescription.sdp
+            })
+        );
+
+        log(
+            "[WEBRTC] Answer sent"
+        );
+    }
+
+
+    /* ---------- CANDIDATE ---------- */
+
+    else if (message.type === "candidate") {
+
+        const candidate = {
+            candidate:
+                message.candidate,
+            sdpMLineIndex:
+                message.sdpMLineIndex,
+            sdpMid:
+                message.sdpMid
+        };
+
+
+        if (remoteDescriptionSet) {
+
+            try {
+
+                await pc.addIceCandidate(
+                    candidate
+                );
+
+            }
+            catch (error) {
+
+                console.error(
+                    "ICE candidate error:",
+                    error
+                );
+            }
+
+        }
+        else {
+
+            pendingCandidates.push(
+                candidate
+            );
+        }
+    }
+};
+
+
+/* -------------------------------------------------------
+   WebSocket error
+------------------------------------------------------- */
+
+ws.onerror = () => {
+
+    log(
+        "[SIGNALING] WebSocket error"
+    );
+
+    setConnectionStatus("failed");
+};
+
+
+/* -------------------------------------------------------
+   WebSocket close
+------------------------------------------------------- */
+
+ws.onclose = () => {
+
+    log(
+        "[SIGNALING] WebSocket closed"
+    );
+
+    setConnectionStatus("failed");
+};
+
+
+/* -------------------------------------------------------
+   Video FPS measurement
+------------------------------------------------------- */
+
+let renderedFrames = 0;
+
+let fpsLastTime =
+    performance.now();
+
+let currentFps = 0;
+
+
+/*
+ * requestVideoFrameCallback()
+ *
+ * This measures frames actually delivered
+ * to the browser video element.
+ */
+
+function videoFrameCallback(
+    now,
+    metadata
+) {
+
+    renderedFrames++;
+
+    if (
+        now - fpsLastTime >= 1000
+    ) {
+
+        const elapsed =
+            now - fpsLastTime;
+
+        currentFps =
+            renderedFrames *
+            1000 /
+            elapsed;
+
+        fpsElement.textContent =
+            currentFps.toFixed(1);
+
+        overlayFps.textContent =
+            currentFps.toFixed(1) +
+            " FPS";
+
+        renderedFrames = 0;
+
+        fpsLastTime = now;
+    }
+
+    if (
+        "requestVideoFrameCallback"
+        in HTMLVideoElement.prototype
+    ) {
+
+        video.requestVideoFrameCallback(
+            videoFrameCallback
+        );
+    }
+}
+
+
+/* Start frame measurement */
+
+if (
+    "requestVideoFrameCallback"
+    in HTMLVideoElement.prototype
+) {
+
+    video.requestVideoFrameCallback(
+        videoFrameCallback
+    );
+
+}
+else {
+
+    log(
+        "[VIDEO] requestVideoFrameCallback not supported"
+    );
+}
+
+
+/* -------------------------------------------------------
+   Video metadata
+------------------------------------------------------- */
+
+video.addEventListener(
+    "loadedmetadata",
+    () => {
+
+        const width =
+            video.videoWidth;
+
+        const height =
+            video.videoHeight;
+
+        const resolution =
+            `${width} × ${height}`;
+
+        resolutionElement.textContent =
+            resolution;
+
+        overlayResolution.textContent =
+            resolution;
+
+        log(
+            "[VIDEO] Resolution: " +
+            resolution
+        );
+    }
+);
+
+
+/* -------------------------------------------------------
+   Video playing
+------------------------------------------------------- */
+
+video.addEventListener(
+    "playing",
+    () => {
+
+        videoState.textContent =
+            "Playing";
+
+        log(
+            "[VIDEO] Playback started"
+        );
+    }
+);
+
+
+/* -------------------------------------------------------
+   Periodic WebRTC statistics
+------------------------------------------------------- */
+
+let previousBytesReceived = null;
+let previousStatsTime = null;
+
+
+/*
+ * Find the inbound video RTP stream.
+ */
+
+async function updateStats() {
+
+    try {
+
+        const stats =
+            await pc.getStats();
+
+        let inboundVideo = null;
+        let codec = null;
+        let remoteInbound = null;
+
+
+        stats.forEach(
+            report => {
+
+                if (
+                    report.type ===
+                    "inbound-rtp" &&
+                    report.kind ===
+                    "video"
+                ) {
+
+                    inboundVideo =
+                        report;
+                }
+
+                if (
+                    report.type ===
+                    "codec" &&
+                    report.mimeType &&
+                    report.mimeType
+                        .toLowerCase()
+                        .includes("video")
+                ) {
+
+                    codec = report;
+                }
+
+                if (
+                    report.type ===
+                    "remote-inbound-rtp"
+                ) {
+
+                    remoteInbound =
+                        report;
+                }
+            }
+        );
+
+
+        /* -----------------------------------
+           Video statistics
+        ----------------------------------- */
+
+        if (inboundVideo) {
+
+            const now =
+                performance.now();
+
+            const bytes =
+                inboundVideo.bytesReceived;
+
+            if (
+                previousBytesReceived !== null &&
+                previousStatsTime !== null
+            ) {
+
+                const bytesDelta =
+                    bytes -
+                    previousBytesReceived;
+
+                const timeDelta =
+                    now -
+                    previousStatsTime;
+
+                if (timeDelta > 0) {
+
+                    const bitrate =
+                        bytesDelta *
+                        8 *
+                        1000 /
+                        timeDelta;
+
+                    bitrateElement.textContent =
+                        formatBitrate(
+                            bitrate
+                        );
+                }
+            }
+
+            previousBytesReceived =
+                bytes;
+
+            previousStatsTime =
+                now;
+
+
+            /* Packets */
+
+            const packetsReceived =
+                inboundVideo.packetsReceived
+                ?? 0;
+
+            const packetsLost =
+                inboundVideo.packetsLost
+                ?? 0;
+
+            packetsReceivedElement.textContent =
+                packetsReceived.toLocaleString();
+
+            packetsLostElement.textContent =
+                packetsLost.toLocaleString();
+
+
+            /* Packet loss */
+
+            const totalPackets =
+                packetsReceived +
+                packetsLost;
+
+            if (totalPackets > 0) {
+
+                const loss =
+                    packetsLost /
+                    totalPackets *
+                    100;
+
+                packetLossElement.textContent =
+                    loss.toFixed(2) + "%";
+
+                if (loss < 0.5) {
+
+                    packetLossElement.className =
+                        "stat-value good";
+
+                }
+                else if (loss < 2) {
+
+                    packetLossElement.className =
+                        "stat-value warning";
+
+                }
+                else {
+
+                    packetLossElement.className =
+                        "stat-value bad";
+                }
+
+            }
+
+
+            /* Jitter */
+
+            if (
+                inboundVideo.jitter !== undefined
+            ) {
+
+                /*
+                 * WebRTC jitter is normally
+                 * expressed in seconds.
+                 */
+
+                const jitterMs =
+                    inboundVideo.jitter *
+                    1000;
+
+                jitterElement.textContent =
+                    jitterMs.toFixed(2) +
+                    " ms";
+            }
+
+
+            /* Codec ID */
+
+            if (
+                inboundVideo.codecId
+            ) {
+
+                const codecReport =
+                    stats.get(
+                        inboundVideo.codecId
+                    );
+
+                if (
+                    codecReport &&
+                    codecReport.mimeType
+                ) {
+
+                    codecElement.textContent =
+                        codecReport.mimeType
+                            .replace(
+                                "video/",
+                                ""
+                            )
+                            .toUpperCase();
+                }
+            }
+        }
+
+
+        /* -----------------------------------
+           Codec fallback
+        ----------------------------------- */
+
+        if (
+            codec &&
+            codec.mimeType
+        ) {
+
+            codecElement.textContent =
+                codec.mimeType
+                    .replace(
+                        "video/",
+                        ""
+                    )
+                    .toUpperCase();
+        }
+
+
+        /* -----------------------------------
+           RTT
+        ----------------------------------- */
+
+        /*
+         * For a receiver, remote-inbound-rtp
+         * may not always be available.
+         *
+         * candidate-pair is a more reliable
+         * source for current RTT.
+         */
+
+        let selectedCandidatePair = null;
+
+        stats.forEach(
+            report => {
+
+                if (
+                    report.type ===
+                    "candidate-pair" &&
+                    (
+                        report.state ===
+                        "succeeded" ||
+                        report.state ===
+                        "connected"
+                    )
+                ) {
+
+                    if (
+                        report.nominated ||
+                        report.selected
+                    ) {
+
+                        selectedCandidatePair =
+                            report;
+                    }
+                }
+            }
+        );
+
+
+        if (selectedCandidatePair) {
+
+            if (
+                selectedCandidatePair.currentRoundTripTime
+                !== undefined
+            ) {
+
+                const rttMs =
+                    selectedCandidatePair
+                        .currentRoundTripTime
+                    * 1000;
+
+                rttElement.textContent =
+                    rttMs.toFixed(1) +
+                    " ms";
+            }
+        }
+
+    }
+    catch (error) {
+
+        console.error(
+            "getStats() error:",
+            error
+        );
+    }
+}
+
+
+/* -------------------------------------------------------
+   Bitrate formatting
+------------------------------------------------------- */
+
+function formatBitrate(
+    bitsPerSecond
+) {
+
+    if (
+        !Number.isFinite(
+            bitsPerSecond
+        )
+    ) {
+
+        return "--";
+    }
+
+    if (
+        bitsPerSecond >= 1000000
+    ) {
+
+        return (
+            bitsPerSecond /
+            1000000
+        ).toFixed(2) +
+        " Mbps";
+
+    }
+
+    if (
+        bitsPerSecond >= 1000
+    ) {
+
+        return (
+            bitsPerSecond /
+            1000
+        ).toFixed(0) +
+        " kbps";
+    }
+
+    return (
+        bitsPerSecond.toFixed(0) +
+        " bps"
+    );
+}
+
+
+/* -------------------------------------------------------
+   Update statistics every second
+------------------------------------------------------- */
+
+setInterval(
+    updateStats,
+    1000
+);
+
+
+/* -------------------------------------------------------
+   Initial log
+------------------------------------------------------- */
+
+log(
+    "[SYSTEM] WebRTC monitor initialized"
+);
+
+log(
+    "[SYSTEM] Waiting for remote video..."
+);
+
+</script>
+
+</body>
+</html>

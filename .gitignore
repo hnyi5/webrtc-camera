@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# 实验产物：视频、码流、日志（不进版本库）
+*.mp4
+*.h264
+*.mjpeg
+*.log
+
+# 编辑器 / 系统垃圾
+.vscode/
+.idea/
+*.swp
+.DS_Store

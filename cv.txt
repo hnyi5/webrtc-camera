@@ -1,0 +1,23 @@
+        pipeline_description = """
+            v4l2src device=/dev/video0 io-mode=mmap
+                !
+            image/jpeg,width=1920,height=1080,framerate=30/1
+                !
+            jpegdec
+                !
+            videoconvert
+                !
+            x264enc tune=zerolatency speed-preset=ultrafast bitrate=4000 key-int-max=30
+                !
+            h264parse
+                !
+            rtph264pay config-interval=1 pt=96
+                !
+            application/x-rtp,media=video,encoding-name=H264,payload=96,clock-rate=90000
+                !
+            webrtc
+        """
+
+        self.pipeline = Gst.parse_launch(
+            pipeline_description.replace("webrtc", "webrtcbin name=webrtc")
+        )

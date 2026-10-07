@@ -1,0 +1,185 @@
+[33mFactory Details:[0m
+  [94mRank                     [0mnone (0)[0m
+  [94mLong-name                [0mClock overlay[0m
+  [94mKlass                    [0mFilter/Editor/Video[0m
+  [94mDescription              [0mOverlays the current clock time on a video stream[0m
+  [94mAuthor                   [0mTim-Philipp Müller <tim@centricular.net>[0m
+
+[33mPlugin Details[0m:
+  [94mName                     [0m[0mpango[0m
+  [94mDescription              [0m[0mPango-based text rendering and overlay[0m
+  [94mFilename                 [0m[0m/usr/lib/x86_64-linux-gnu/gstreamer-1.0/libgstpango.so[0m
+  [94mVersion                  [0m[0m1.20.1[0m
+  [94mLicense                  [0m[0mLGPL[0m
+  [94mSource module            [0m[0mgst-plugins-base[0m
+  [94mSource release date      [0m[0m2022-03-14[0m
+  [94mBinary package           [0m[0mGStreamer Base Plugins (Ubuntu)[0m
+  [94mOrigin URL               [0m[0mhttps://launchpad.net/distros/ubuntu/+source/gst-plugins-base1.0[0m
+
+[32mGObject[0m
+ [95m+----[0m[32mGInitiallyUnowned[0m
+       [95m+----[0m[32mGstObject[0m
+             [95m+----[0m[32mGstElement[0m
+                   [95m+----[0m[32mGstBaseTextOverlay[0m
+                         [95m+----[0m[32mGstClockOverlay[0m
+
+[33mPad Templates[0m:
+  [94mSRC template[0m: [0m'src'[0m
+    [94mAvailability[0m: [0mAlways[0m
+    [94mCapabilities[0m:
+      [33mvideo/x-raw[0m
+        [36m         format[0m: [94m{ (string)ABGR64_LE, (string)BGRA64_LE, (string)AYUV64, (string)ARGB64_LE, (string)ARGB64, (string)RGBA64_LE, (string)ABGR64_BE, (string)BGRA64_BE, (string)ARGB64_BE, (string)RGBA64_BE, (string)GBRA_12LE, (string)GBRA_12BE, (string)Y412_LE, (string)Y412_BE, (string)A444_10LE, (string)GBRA_10LE, (string)A444_10BE, (string)GBRA_10BE, (string)A422_10LE, (string)A422_10BE, (string)A420_10LE, (string)A420_10BE, (string)RGB10A2_LE, (string)BGR10A2_LE, (string)Y410, (string)GBRA, (string)ABGR, (string)VUYA, (string)BGRA, (string)AYUV, (string)ARGB, (string)RGBA, (string)A420, (string)AV12, (string)Y444_16LE, (string)Y444_16BE, (string)v216, (string)P016_LE, (string)P016_BE, (string)Y444_12LE, (string)GBR_12LE, (string)Y444_12BE, (string)GBR_12BE, (string)I422_12LE, (string)I422_12BE, (string)Y212_LE, (string)Y212_BE, (string)I420_12LE, (string)I420_12BE, (string)P012_LE, (string)P012_BE, (string)Y444_10LE, (string)GBR_10LE, (string)Y444_10BE, (string)GBR_10BE, (string)r210, (string)I422_10LE, (string)I422_10BE, (string)NV16_10LE32, (string)Y210, (string)v210, (string)UYVP, (string)I420_10LE, (string)I420_10BE, (string)P010_10LE, (string)NV12_10LE32, (string)NV12_10LE40, (string)P010_10BE, (string)Y444, (string)RGBP, (string)GBR, (string)BGRP, (string)NV24, (string)xBGR, (string)BGRx, (string)xRGB, (string)RGBx, (string)BGR, (string)IYU2, (string)v308, (string)RGB, (string)Y42B, (string)NV61, (string)NV16, (string)VYUY, (string)UYVY, (string)YVYU, (string)YUY2, (string)I420, (string)YV12, (string)NV21, (string)NV12, (string)NV12_64Z32, (string)NV12_4L4, (string)NV12_32L32, (string)Y41B, (string)IYU1, (string)YVU9, (string)YUV9, (string)RGB16, (string)BGR16, (string)RGB15, (string)BGR15, (string)RGB8P, (string)GRAY16_LE, (string)GRAY16_BE, (string)GRAY10_LE32, (string)GRAY8 }[0m
+        [36m          width[0m: [94m[ 1, 2147483647 ][0m
+        [36m         height[0m: [94m[ 1, 2147483647 ][0m
+        [36m      framerate[0m: [94m[ 0/1, 2147483647/1 ][0m
+      [33mvideo/x-raw[0m([32mANY[0m)
+        [36m         format[0m: [94m{ (string)ABGR64_LE, (string)BGRA64_LE, (string)AYUV64, (string)ARGB64_LE, (string)ARGB64, (string)RGBA64_LE, (string)ABGR64_BE, (string)BGRA64_BE, (string)ARGB64_BE, (string)RGBA64_BE, (string)GBRA_12LE, (string)GBRA_12BE, (string)Y412_LE, (string)Y412_BE, (string)A444_10LE, (string)GBRA_10LE, (string)A444_10BE, (string)GBRA_10BE, (string)A422_10LE, (string)A422_10BE, (string)A420_10LE, (string)A420_10BE, (string)RGB10A2_LE, (string)BGR10A2_LE, (string)Y410, (string)GBRA, (string)ABGR, (string)VUYA, (string)BGRA, (string)AYUV, (string)ARGB, (string)RGBA, (string)A420, (string)AV12, (string)Y444_16LE, (string)Y444_16BE, (string)v216, (string)P016_LE, (string)P016_BE, (string)Y444_12LE, (string)GBR_12LE, (string)Y444_12BE, (string)GBR_12BE, (string)I422_12LE, (string)I422_12BE, (string)Y212_LE, (string)Y212_BE, (string)I420_12LE, (string)I420_12BE, (string)P012_LE, (string)P012_BE, (string)Y444_10LE, (string)GBR_10LE, (string)Y444_10BE, (string)GBR_10BE, (string)r210, (string)I422_10LE, (string)I422_10BE, (string)NV16_10LE32, (string)Y210, (string)v210, (string)UYVP, (string)I420_10LE, (string)I420_10BE, (string)P010_10LE, (string)NV12_10LE32, (string)NV12_10LE40, (string)P010_10BE, (string)Y444, (string)RGBP, (string)GBR, (string)BGRP, (string)NV24, (string)xBGR, (string)BGRx, (string)xRGB, (string)RGBx, (string)BGR, (string)IYU2, (string)v308, (string)RGB, (string)Y42B, (string)NV61, (string)NV16, (string)VYUY, (string)UYVY, (string)YVYU, (string)YUY2, (string)I420, (string)YV12, (string)NV21, (string)NV12, (string)NV12_64Z32, (string)NV12_4L4, (string)NV12_32L32, (string)Y41B, (string)IYU1, (string)YVU9, (string)YUV9, (string)RGB16, (string)BGR16, (string)RGB15, (string)BGR15, (string)RGB8P, (string)GRAY16_LE, (string)GRAY16_BE, (string)GRAY10_LE32, (string)GRAY8 }[0m
+        [36m          width[0m: [94m[ 1, 2147483647 ][0m
+        [36m         height[0m: [94m[ 1, 2147483647 ][0m
+        [36m      framerate[0m: [94m[ 0/1, 2147483647/1 ][0m
+  
+  [94mSINK template[0m: [0m'video_sink'[0m
+    [94mAvailability[0m: [0mAlways[0m
+    [94mCapabilities[0m:
+      [33mvideo/x-raw[0m
+        [36m         format[0m: [94m{ (string)ABGR64_LE, (string)BGRA64_LE, (string)AYUV64, (string)ARGB64_LE, (string)ARGB64, (string)RGBA64_LE, (string)ABGR64_BE, (string)BGRA64_BE, (string)ARGB64_BE, (string)RGBA64_BE, (string)GBRA_12LE, (string)GBRA_12BE, (string)Y412_LE, (string)Y412_BE, (string)A444_10LE, (string)GBRA_10LE, (string)A444_10BE, (string)GBRA_10BE, (string)A422_10LE, (string)A422_10BE, (string)A420_10LE, (string)A420_10BE, (string)RGB10A2_LE, (string)BGR10A2_LE, (string)Y410, (string)GBRA, (string)ABGR, (string)VUYA, (string)BGRA, (string)AYUV, (string)ARGB, (string)RGBA, (string)A420, (string)AV12, (string)Y444_16LE, (string)Y444_16BE, (string)v216, (string)P016_LE, (string)P016_BE, (string)Y444_12LE, (string)GBR_12LE, (string)Y444_12BE, (string)GBR_12BE, (string)I422_12LE, (string)I422_12BE, (string)Y212_LE, (string)Y212_BE, (string)I420_12LE, (string)I420_12BE, (string)P012_LE, (string)P012_BE, (string)Y444_10LE, (string)GBR_10LE, (string)Y444_10BE, (string)GBR_10BE, (string)r210, (string)I422_10LE, (string)I422_10BE, (string)NV16_10LE32, (string)Y210, (string)v210, (string)UYVP, (string)I420_10LE, (string)I420_10BE, (string)P010_10LE, (string)NV12_10LE32, (string)NV12_10LE40, (string)P010_10BE, (string)Y444, (string)RGBP, (string)GBR, (string)BGRP, (string)NV24, (string)xBGR, (string)BGRx, (string)xRGB, (string)RGBx, (string)BGR, (string)IYU2, (string)v308, (string)RGB, (string)Y42B, (string)NV61, (string)NV16, (string)VYUY, (string)UYVY, (string)YVYU, (string)YUY2, (string)I420, (string)YV12, (string)NV21, (string)NV12, (string)NV12_64Z32, (string)NV12_4L4, (string)NV12_32L32, (string)Y41B, (string)IYU1, (string)YVU9, (string)YUV9, (string)RGB16, (string)BGR16, (string)RGB15, (string)BGR15, (string)RGB8P, (string)GRAY16_LE, (string)GRAY16_BE, (string)GRAY10_LE32, (string)GRAY8 }[0m
+        [36m          width[0m: [94m[ 1, 2147483647 ][0m
+        [36m         height[0m: [94m[ 1, 2147483647 ][0m
+        [36m      framerate[0m: [94m[ 0/1, 2147483647/1 ][0m
+      [33mvideo/x-raw[0m([32mANY[0m)
+        [36m         format[0m: [94m{ (string)ABGR64_LE, (string)BGRA64_LE, (string)AYUV64, (string)ARGB64_LE, (string)ARGB64, (string)RGBA64_LE, (string)ABGR64_BE, (string)BGRA64_BE, (string)ARGB64_BE, (string)RGBA64_BE, (string)GBRA_12LE, (string)GBRA_12BE, (string)Y412_LE, (string)Y412_BE, (string)A444_10LE, (string)GBRA_10LE, (string)A444_10BE, (string)GBRA_10BE, (string)A422_10LE, (string)A422_10BE, (string)A420_10LE, (string)A420_10BE, (string)RGB10A2_LE, (string)BGR10A2_LE, (string)Y410, (string)GBRA, (string)ABGR, (string)VUYA, (string)BGRA, (string)AYUV, (string)ARGB, (string)RGBA, (string)A420, (string)AV12, (string)Y444_16LE, (string)Y444_16BE, (string)v216, (string)P016_LE, (string)P016_BE, (string)Y444_12LE, (string)GBR_12LE, (string)Y444_12BE, (string)GBR_12BE, (string)I422_12LE, (string)I422_12BE, (string)Y212_LE, (string)Y212_BE, (string)I420_12LE, (string)I420_12BE, (string)P012_LE, (string)P012_BE, (string)Y444_10LE, (string)GBR_10LE, (string)Y444_10BE, (string)GBR_10BE, (string)r210, (string)I422_10LE, (string)I422_10BE, (string)NV16_10LE32, (string)Y210, (string)v210, (string)UYVP, (string)I420_10LE, (string)I420_10BE, (string)P010_10LE, (string)NV12_10LE32, (string)NV12_10LE40, (string)P010_10BE, (string)Y444, (string)RGBP, (string)GBR, (string)BGRP, (string)NV24, (string)xBGR, (string)BGRx, (string)xRGB, (string)RGBx, (string)BGR, (string)IYU2, (string)v308, (string)RGB, (string)Y42B, (string)NV61, (string)NV16, (string)VYUY, (string)UYVY, (string)YVYU, (string)YUY2, (string)I420, (string)YV12, (string)NV21, (string)NV12, (string)NV12_64Z32, (string)NV12_4L4, (string)NV12_32L32, (string)Y41B, (string)IYU1, (string)YVU9, (string)YUV9, (string)RGB16, (string)BGR16, (string)RGB15, (string)BGR15, (string)RGB8P, (string)GRAY16_LE, (string)GRAY16_BE, (string)GRAY10_LE32, (string)GRAY8 }[0m
+        [36m          width[0m: [94m[ 1, 2147483647 ][0m
+        [36m         height[0m: [94m[ 1, 2147483647 ][0m
+        [36m      framerate[0m: [94m[ 0/1, 2147483647/1 ][0m
+
+[0mElement has no clocking capabilities.[0m
+[0mElement has no URI handling capabilities.[0m
+
+[33mPads:[0m
+  [94mSINK[0m: [0m'video_sink'[0m
+    [94mPad Template[0m: [0m'video_sink'[0m
+  [94mSRC[0m: [0m'src'[0m
+    [94mPad Template[0m: [0m'src'[0m
+
+[33mElement Properties[0m:
+  [94mauto-resize         [0m: [0mAutomatically adjust font size to screen-size.[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mBoolean[0m. [33mDefault[0m: [36mtrue[0m
+  [94mcolor               [0m: [0mColor to use for text (big-endian ARGB).[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, [36mcontrollable[0m
+                        [32mUnsigned Integer[0m. [33mRange[0m: [36m0 - 4294967295[0m [33mDefault[0m: [36m4294967295[0m 
+  [94mdeltax              [0m: [0mShift X position to the left or to the right. Unit is pixels.[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, [36mcontrollable[0m
+                        [32mInteger[0m. [33mRange[0m: [36m-2147483648 - 2147483647[0m [33mDefault[0m: [36m0[0m 
+  [94mdeltay              [0m: [0mShift Y position up or down. Unit is pixels.[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, [36mcontrollable[0m
+                        [32mInteger[0m. [33mRange[0m: [36m-2147483648 - 2147483647[0m [33mDefault[0m: [36m0[0m 
+  [94mdraw-outline        [0m: [0mWhether to draw outline[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mBoolean[0m. [33mDefault[0m: [36mtrue[0m
+  [94mdraw-shadow         [0m: [0mWhether to draw shadow[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mBoolean[0m. [33mDefault[0m: [36mtrue[0m
+  [94mfont-desc           [0m: [0mPango font description of font to be used for rendering. See documentation of pango_font_description_from_string for syntax.[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mString[0m. [33mDefault[0m: [36m""[0m
+  [94mhalignment          [0m: [0mHorizontal alignment of the text[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, 0x[36m2000[0m
+                        [32mEnum "GstBaseTextOverlayHAlign"[0m [33mDefault[0m: [36m0, "left"[0m
+                           [33m(0)[0m: [36mleft            [0m - [0mleft[0m
+                           [33m(1)[0m: [36mcenter          [0m - [0mcenter[0m
+                           [33m(2)[0m: [36mright           [0m - [0mright[0m
+                           [33m(4)[0m: [36mAbsolute position clamped to canvas[0m - [0mposition[0m
+                           [33m(5)[0m: [36mAbsolute position[0m - [0mabsolute[0m
+  [94mline-alignment      [0m: [0mAlignment of text lines relative to each other.[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mEnum "GstBaseTextOverlayLineAlign"[0m [33mDefault[0m: [36m1, "center"[0m
+                           [33m(0)[0m: [36mleft            [0m - [0mleft[0m
+                           [33m(1)[0m: [36mcenter          [0m - [0mcenter[0m
+                           [33m(2)[0m: [36mright           [0m - [0mright[0m
+  [94mname                [0m: [0mThe name of the object[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, 0x[36m2000[0m
+                        [32mString[0m. [33mDefault[0m: [36m"clockoverlay0"[0m
+  [94moutline-color       [0m: [0mColor to use for outline the text (big-endian ARGB).[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, [36mcontrollable[0m
+                        [32mUnsigned Integer[0m. [33mRange[0m: [36m0 - 4294967295[0m [33mDefault[0m: [36m4278190080[0m 
+  [94mparent              [0m: [0mThe parent of the object[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, 0x[36m2000[0m
+                        [0mObject of type[0m [32m"GstObject"[0m
+  [94mscale-mode          [0m: [0mScale text to compensate for and avoid distortion by subsequent video scaling.[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mEnum "GstBaseTextOverlayScaleMode"[0m [33mDefault[0m: [36m0, "none"[0m
+                           [33m(0)[0m: [36mnone            [0m - [0mnone[0m
+                           [33m(1)[0m: [36mpar             [0m - [0mpar[0m
+                           [33m(2)[0m: [36mdisplay         [0m - [0mdisplay[0m
+                           [33m(3)[0m: [36muser            [0m - [0muser[0m
+  [94mscale-pixel-aspect-ratio[0m: [0mPixel aspect ratio of video scale to compensate for in user scale-mode[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mFraction[0m. [33mRange[0m: [36m1/100 - 100/1[0m [33mDefault[0m: [36m1/1[0m 
+  [94mshaded-background   [0m: [0mWhether to shade the background under the text area[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mBoolean[0m. [33mDefault[0m: [36mfalse[0m
+  [94mshading-value       [0m: [0mShading value to apply if shaded-background is true[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, 0x[36m2000[0m
+                        [32mUnsigned Integer[0m. [33mRange[0m: [36m1 - 255[0m [33mDefault[0m: [36m80[0m 
+  [94msilent              [0m: [0mWhether to render the text string[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, [36mcontrollable[0m
+                        [32mBoolean[0m. [33mDefault[0m: [36mfalse[0m
+  [94mtext                [0m: [0mText to be display.[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, [36mcontrollable[0m
+                        [32mString[0m. [33mDefault[0m: [36m""[0m
+  [94mtext-height         [0m: [0mResulting height of font rendering[0m
+                        [33mflags[0m: [36mreadable[0m
+                        [32mUnsigned Integer[0m. [33mRange[0m: [36m0 - 2147483647[0m [33mDefault[0m: [36m1[0m 
+  [94mtext-width          [0m: [0mResulting width of font rendering[0m
+                        [33mflags[0m: [36mreadable[0m
+                        [32mUnsigned Integer[0m. [33mRange[0m: [36m0 - 2147483647[0m [33mDefault[0m: [36m1[0m 
+  [94mtext-x              [0m: [0mResulting X position of font rendering.[0m
+                        [33mflags[0m: [36mreadable[0m
+                        [32mInteger[0m. [33mRange[0m: [36m-2147483647 - 2147483647[0m [33mDefault[0m: [36m0[0m 
+  [94mtext-y              [0m: [0mResulting X position of font rendering.[0m
+                        [33mflags[0m: [36mreadable[0m
+                        [32mInteger[0m. [33mRange[0m: [36m-2147483647 - 2147483647[0m [33mDefault[0m: [36m0[0m 
+  [94mtime-format         [0m: [0mFormat to use for time and date value, as in strftime.[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mString[0m. [33mDefault[0m: [36m"%H:%M:%S"[0m
+  [94mvalignment          [0m: [0mVertical alignment of the text[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mEnum "GstBaseTextOverlayVAlign"[0m [33mDefault[0m: [36m2, "top"[0m
+                           [33m(0)[0m: [36mbaseline        [0m - [0mbaseline[0m
+                           [33m(1)[0m: [36mbottom          [0m - [0mbottom[0m
+                           [33m(2)[0m: [36mtop             [0m - [0mtop[0m
+                           [33m(3)[0m: [36mAbsolute position clamped to canvas[0m - [0mposition[0m
+                           [33m(4)[0m: [36mcenter          [0m - [0mcenter[0m
+                           [33m(5)[0m: [36mAbsolute position[0m - [0mabsolute[0m
+  [94mvertical-render     [0m: [0mVertical Render.[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mBoolean[0m. [33mDefault[0m: [36mfalse[0m
+  [94mwait-text           [0m: [0mWhether to wait for subtitles[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mBoolean[0m. [33mDefault[0m: [36mtrue[0m
+  [94mwrap-mode           [0m: [0mWhether to wrap the text and if so how.[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mEnum "GstBaseTextOverlayWrapMode"[0m [33mDefault[0m: [36m2, "wordchar"[0m
+                           [33m(-1)[0m: [36mnone            [0m - [0mnone[0m
+                           [33m(0)[0m: [36mword            [0m - [0mword[0m
+                           [33m(1)[0m: [36mchar            [0m - [0mchar[0m
+                           [33m(2)[0m: [36mwordchar        [0m - [0mwordchar[0m
+  [94mx-absolute          [0m: [0mHorizontal position when using absolute alignment[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, [36mcontrollable[0m
+                        [32mDouble[0m. [33mRange[0m: [36m -1.797693e+308 -   1.797693e+308[0m [33mDefault[0m: [36m            0.5[0m 
+  [94mxpad                [0m: [0mHorizontal paddding when using left/right alignment[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mInteger[0m. [33mRange[0m: [36m0 - 2147483647[0m [33mDefault[0m: [36m25[0m 
+  [94mxpos                [0m: [0mHorizontal position when using clamped position alignment[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, [36mcontrollable[0m
+                        [32mDouble[0m. [33mRange[0m: [36m              0 -               1[0m [33mDefault[0m: [36m            0.5[0m 
+  [94my-absolute          [0m: [0mVertical position when using absolute alignment[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, [36mcontrollable[0m
+                        [32mDouble[0m. [33mRange[0m: [36m -1.797693e+308 -   1.797693e+308[0m [33mDefault[0m: [36m            0.5[0m 
+  [94mypad                [0m: [0mVertical padding when using top/bottom alignment[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m
+                        [32mInteger[0m. [33mRange[0m: [36m0 - 2147483647[0m [33mDefault[0m: [36m25[0m 
+  [94mypos                [0m: [0mVertical position when using clamped position alignment[0m
+                        [33mflags[0m: [36mreadable[0m, [36mwritable[0m, [36mcontrollable[0m
+                        [32mDouble[0m. [33mRange[0m: [36m              0 -               1[0m [33mDefault[0m: [36m            0.5[0m 
