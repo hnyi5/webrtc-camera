@@ -859,3 +859,75 @@ offset = ((t2 - t1) + (t3 - t4)) / 2        # sender_clock - browser_clock
 这正是 §15「Source timestamp 不是 sensor exposure timestamp」所指的边界。
 若要让页面数字与手机测量对齐，需要把探针前移到 `v4l2src.src`（可省掉解码
 与色彩转换），进一步则要用 UVC 驱动提供的硬件时间戳（§15 提到的方向）。
+
+---
+
+# 27. 2026-10-07 回归与自愈：两个线程写同一个 WebSocket
+
+## 27.1 现象
+
+上线方案 A 后约一小时，页面延迟变成 **−1265.9 ms**，且「半天才跳一次」。
+
+## 27.2 根因一（回归）：两个线程同时 send
+
+- `flush_rtp_mappings()` 在 **GLib 主线程**发送映射；
+- 新增的 `clock_sync` 应答在 **WebSocket 线程**里直接 `ws.send()`。
+
+两个线程同时写同一个 WebSocket → 帧结构交叉 → 连接被服务端关闭
+（`Connection closed normally`，code 1000）。之后没有任何帧时间戳再送达，
+页面就停在被污染的最后一次结果上。
+
+**修复**：应答改由 `GLib.idle_add` 交给 GLib 线程发送，所有发送回到单线程。
+这正是代码里 `set_remote_answer` 已经在用的模式。
+
+> **铁律：一个 WebSocket 只能有一个发送线程。**
+
+## 27.3 根因二（设计缺陷）：估计器没有任何绝对校验
+
+连接将死时有一次 `clock_sync` 往返花了 **2490 ms**，据此算出的「偏移」是
+−1454 ms —— 页面于是把所有延迟都算成约 −1265 ms。
+
+原实现是「取最近 20 个样本中 RTT 最小的」：它只在样本**之间**比较，
+从不与绝对阈值比较，所以一个 2490 ms 的样本只要比同批其他样本小就会被采纳；
+而且一旦被采纳就可能一直霸占（更老的样本 RTT 更小就永远赢），
+真正的时钟跳变会被无声地无视。
+
+**修复**：
+
+1. **绝对阈值**：RTT > 100 ms 的样本直接丢弃（本机链路实测远小于 1 ms）。
+2. **中位数**取代「最小 RTT」：单个坏样本无法移动中位数，真实跳变几个样本内跟上。
+3. **时效性**：超过 5 s 没有有效样本即判定 `stale`，**拒绝显示任何延迟数字**。
+
+> **原则：宁可显示「没有测量」，绝不显示「错误的测量」。**
+
+## 27.4 根因三（原有缺陷）：断线后没有任何恢复
+
+信令 WebSocket 是帧时间戳与时钟偏差的**唯一**通道，断了之后双方都无法重新协商。
+
+**修复（自愈）**：
+
+- sender 在 WebSocket 关闭时**退出**；
+- `run_sender_loop.sh` 监管并在 2 s 后重启它 —— **每次重启都会发一个新的
+  SDP offer**，这正是恢复会话所需的东西；
+- 页面在 WebSocket 关闭时，**若曾经建立过会话**（`hadLiveSession`）则 3 s 后
+  自动刷新；从未成功过就不刷新，避免 sender 未启动时反复刷新；
+- 页面在 WebSocket 打开时主动发 `request_offer`，因为 sender 可能在本页面
+  出现之前就发过一次 offer，那次是发到空处的。
+
+## 27.5 故障注入验证
+
+杀掉信令服务器（`fuser -k 8765/tcp`）后**无需任何人工干预**，45 秒内自动恢复：
+
+```text
+[SUPERVISOR] signaling_server.py exited (code 137), restarting in 2 s
+[SUPERVISOR] webrtc_sender_Now_latency_probe.py exited (code 0), restarting in 2 s
+[SIGNALING] WebSocket closed: None None
+[SIGNALING] Exiting so the restart loop can re-establish the session
+[SIGNALING] WebSocket connected
+[SIGNALING] SDP offer sent
+```
+
+恢复后：CONNECTED / 1920×1080 / 26–30 fps / 延迟 22–63 ms / Match 100%。
+
+> 注意：重新协商后延迟会短暂偏高（43–63 ms 对比正常 17–31 ms），
+> 那是 WebRTC 抖动缓冲重新收敛的过程，几秒后回落。

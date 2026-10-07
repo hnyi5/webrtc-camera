@@ -660,14 +660,33 @@ class WebRTCSender:
             if t1 is None:
                 return
 
-            self.send_signaling_message(
-                {
-                    "type": "clock_sync_reply",
-                    "t1": t1,
-                    "t2": time.time() * 1000.0,
-                    "t3": time.time() * 1000.0,
-                }
-            )
+            # t2 is read here, on the thread that received the request.
+            t2 = time.time() * 1000.0
+
+            # The reply must NOT be sent from this thread.
+            #
+            # flush_rtp_mappings() sends from the GLib main thread.  Two
+            # threads calling WebSocket.send() at the same time interleave
+            # their frames, which corrupts the stream and makes the server
+            # drop the connection -- observed as "Connection closed normally"
+            # (code 1000), after which every measurement silently went wrong.
+            #
+            # Handing the reply to the GLib thread keeps every send on a
+            # single thread, which is the pattern already used below for
+            # set_remote_answer.
+            GLib.idle_add(self.send_clock_reply, t1, t2)
+
+            return
+
+        # ------------------------------------------------------------
+        # A (re)connecting browser asks for a fresh SDP offer.  Without
+        # this the sender's first offer can be sent before any browser
+        # exists and is then lost forever.
+        # ------------------------------------------------------------
+
+        if message_type == "request_offer":
+
+            GLib.idle_add(self.request_offer)
 
             return
 
@@ -747,6 +766,46 @@ class WebRTCSender:
         )
 
         self.ws_connected.clear()
+
+        # The signaling link carries every frame timing and the clock offset,
+        # and neither side can renegotiate over a closed socket.  Exit so the
+        # supervising restart loop brings up a fresh sender (which sends a
+        # fresh offer) instead of leaving the page displaying a stale, wrong
+        # number forever.
+        print(
+            "[SIGNALING] Exiting so the restart loop can re-establish the session"
+        )
+
+        GLib.idle_add(
+            self.loop.quit
+        )
+
+    def send_clock_reply(
+        self,
+        t1,
+        t2
+    ):
+
+        self.send_signaling_message(
+            {
+                "type": "clock_sync_reply",
+                "t1": t1,
+                "t2": t2,
+                "t3": time.time() * 1000.0,
+            }
+        )
+
+        return False
+
+    def request_offer(self):
+
+        print("[WebRTC] A browser asked for a fresh offer")
+
+        self.on_negotiation_needed(
+            self.webrtc
+        )
+
+        return False
 
     def send_signaling_message(
         self,

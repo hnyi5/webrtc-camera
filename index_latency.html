@@ -770,6 +770,13 @@ const ws =
 
 let remoteDescriptionSet = false;
 
+/*
+ * Set once a session has actually worked.  The reload-on-drop below must
+ * not fire otherwise, or a sender that is simply not running yet would
+ * cause an endless reload loop.
+ */
+let hadLiveSession = false;
+
 let pendingCandidates = [];
 
 
@@ -840,6 +847,8 @@ pc.onconnectionstatechange = () => {
             "stat-value good";
 
         setConnectionStatus("connected");
+
+        hadLiveSession = true;
     }
     else if (
         state === "failed" ||
@@ -931,6 +940,17 @@ ws.onopen = () => {
     log(
         "[SIGNALING] WebSocket connected"
     );
+
+    /*
+     * Ask for a fresh offer.  The sender may have sent its first offer
+     * before this page existed, in which case it went nowhere and the page
+     * would otherwise wait forever.
+     */
+    ws.send(
+        JSON.stringify({
+            type: "request_offer"
+        })
+    );
 };
 
 
@@ -979,10 +999,29 @@ ws.onopen = () => {
 
 let clockOffsetMs = null;
 let clockOffsetRttMs = null;
+let clockOffsetAtMs = null;
+let clockRejectedCount = 0;
 
 const clockSamples = [];
 
-const CLOCK_SAMPLE_MAX = 20;
+/*
+ * A sample is only believable when its round trip is short.
+ *
+ * The offset estimate is wrong by half the difference between the two path
+ * delays, and a long round trip means a long -- and completely unknown --
+ * asymmetry.  On this local link a round trip is well under a millisecond,
+ * so anything above this limit is a stalled socket, not a clock.
+ *
+ * Without this check one 2490 ms sample (taken while the socket was dying)
+ * produced a -1454 ms "offset" and the page showed -1265 ms of latency.
+ */
+const CLOCK_RTT_MAX_MS = 100;
+
+/* Median of this many recent samples: no single sample can move it. */
+const CLOCK_SAMPLE_MAX = 5;
+
+/* Older than this and the estimate must not be turned into a number. */
+const CLOCK_STALE_MS = 5000;
 
 /*
  * The browser's own epoch-based clock, on the same performance
@@ -1036,33 +1075,101 @@ function handleClockSyncReply(message) {
     const offset =
         ((t2 - t1) + (t3 - t4)) / 2;
 
+    /* Reject a sample that is not believable on its own merits. */
+    if (
+        !Number.isFinite(rtt) ||
+        !Number.isFinite(offset) ||
+        rtt < 0 ||
+        rtt > CLOCK_RTT_MAX_MS
+    ) {
+        clockRejectedCount++;
+        updateClockUi();
+        return;
+    }
+
     clockSamples.push({ rtt, offset });
 
     if (clockSamples.length > CLOCK_SAMPLE_MAX) {
         clockSamples.shift();
     }
 
-    let best = clockSamples[0];
+    /*
+     * Median, not "smallest round trip".
+     *
+     * The old rule held on to whichever sample had the smallest round trip,
+     * which meant a stale sample could win forever and a real clock step
+     * could be ignored indefinitely.  A median cannot be moved by one bad
+     * sample and follows a genuine step within a few samples.
+     */
+    const offsets = clockSamples
+        .map((sample) => sample.offset)
+        .sort((a, b) => a - b);
 
-    for (const sample of clockSamples) {
+    const middle =
+        Math.floor(offsets.length / 2);
 
-        if (sample.rtt < best.rtt) {
-            best = sample;
-        }
+    clockOffsetMs = (offsets.length % 2 === 1)
+        ? offsets[middle]
+        : (offsets[middle - 1] + offsets[middle]) / 2;
+
+    clockOffsetRttMs = rtt;
+    clockOffsetAtMs = t4;
+
+    updateClockUi();
+}
+
+/*
+ * The estimate is only usable while it is fresh.  A stale estimate must
+ * never be turned into a latency number: showing "no measurement" is
+ * correct, showing a wrong number is not.
+ */
+function clockIsFresh() {
+
+    return (
+        Number.isFinite(clockOffsetMs) &&
+        Number.isFinite(clockOffsetAtMs) &&
+        (browserEpochMs() - clockOffsetAtMs) <=
+            CLOCK_STALE_MS
+    );
+}
+
+function updateClockUi() {
+
+    if (clockIsFresh()) {
+
+        latencyClockOffsetElement.textContent =
+            clockOffsetMs.toFixed(1) + " ms";
+
+        latencyClockOffsetElement.className =
+            "stat-value good";
+
+        latencyClockRttElement.textContent =
+            clockOffsetRttMs.toFixed(2) + " ms" +
+            (clockRejectedCount > 0
+                ? ` / ${clockRejectedCount} rejected`
+                : "");
+
+        return;
     }
 
-    clockOffsetMs = best.offset;
-    clockOffsetRttMs = best.rtt;
-
     latencyClockOffsetElement.textContent =
-        clockOffsetMs.toFixed(1) + " ms";
+        "stale — latency unavailable";
+
+    latencyClockOffsetElement.className =
+        "stat-value bad";
 
     latencyClockRttElement.textContent =
-        clockOffsetRttMs.toFixed(2) + " ms";
+        clockRejectedCount > 0
+            ? `${clockRejectedCount} rejected`
+            : "--";
 }
 
 /* Re-estimate once a second; the offset can drift or step. */
 setInterval(requestClockSync, 1000);
+
+/* Repaint the clock rows even if no frame arrives, so a stale estimate
+   becomes visible instead of looking healthy. */
+setInterval(updateClockUi, 1000);
 
 const rtpFrameMap = new Map();
 const pendingVideoFrames = new Map();
@@ -1203,12 +1310,32 @@ function updateMatchedLatency(
      * timestamps below are expressed in.  Only then is the
      * subtraction below a duration rather than a mix of two clocks.
      */
-    const clockCalibrated =
-        Number.isFinite(clockOffsetMs);
+    const clockCalibrated = clockIsFresh();
+
+    if (!clockCalibrated) {
+
+        /*
+         * The frame was matched, but without a trustworthy clock offset no
+         * honest latency can be produced from it.
+         */
+        latencyMatchCount++;
+
+        latencyMatchStatsElement.textContent =
+            `${latencyMatchCount} / ${latencyMissCount}`;
+
+        latencyMetadataElement.textContent =
+            "clock offset stale — latency not shown";
+
+        softwareLatencyElement.textContent = "--";
+
+        updateClockUi();
+
+        return;
+    }
 
     const captureEpochOnBrowserClock =
         captureEpochMs -
-        (clockCalibrated ? clockOffsetMs : 0);
+        clockOffsetMs;
 
     const callbackEpochMs =
         frameObservation.callbackEpochMs;
@@ -1294,10 +1421,7 @@ function updateMatchedLatency(
         `${latencyMatchCount} / ${latencyMissCount}`;
 
     latencyMetadataElement.textContent =
-        `matched frame ${mapping.frame_id ?? "--"}` +
-        (clockCalibrated
-            ? ""
-            : " (clock not calibrated yet)");
+        `matched frame ${mapping.frame_id ?? "--"}`;
 }
 
 function processVideoFrameObservation(
@@ -1631,6 +1755,24 @@ ws.onclose = () => {
     );
 
     setConnectionStatus("failed");
+
+    /*
+     * The signaling socket is the only channel for frame timings and for
+     * the clock offset, and neither side can renegotiate over a closed
+     * socket.  The sender runs under a restart loop, so reloading here
+     * gives both sides a clean start.
+     */
+    if (hadLiveSession) {
+
+        log(
+            "[SIGNALING] Reloading in 3 s to re-establish the session"
+        );
+
+        setTimeout(
+            () => location.reload(),
+            3000
+        );
+    }
 };
 
 
