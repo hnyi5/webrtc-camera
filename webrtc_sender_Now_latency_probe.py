@@ -4,6 +4,7 @@ import sys
 import json
 import threading
 import time
+from collections import deque
 from datetime import datetime
 
 import gi
@@ -51,11 +52,28 @@ class WebRTCSender:
         # source-buffer wall-clock timestamp.
         # ============================================================
 
-        self.capture_by_pts = {}
+        # Source frames waiting to be paired with an encoded frame.
+        #
+        # Pairing is by ORDER, not by PTS.  x264enc rewrites the buffer PTS
+        # (it adds a constant base), so the source PTS and the PTS observed at
+        # rtph264pay live in two different domains and can never be equal.
+        # The offset between the two domains is measured from the first pair
+        # and re-anchored on every frame, which also detects frames dropped
+        # upstream instead of silently shifting the pairing by one frame.
+        self.source_frames = deque()
 
         self.rtp_mapping_queue = []
 
-        self.rtp_timestamps_sent = set()
+        self.last_rtp_timestamp = None
+
+        self.pts_offset = None
+
+        # Diagnostics for the periodic [MAP] report.
+        self.map_matched = 0
+        self.map_missed = 0
+        self.offset_adjustments = 0
+        self.offset_last_delta = 0
+        self.skipped_source_frames = 0
 
         self.rtp_mapping_lock = threading.Lock()
         # ============================================================
@@ -108,6 +126,9 @@ class WebRTCSender:
             application/x-rtp,media=video,encoding-name=H264,payload=96,clock-rate=90000
             !
             queue name=rtp_queue
+                max-size-buffers=32
+                max-size-bytes=0
+                max-size-time=0
         """
 
         self.pipeline = Gst.parse_launch(
@@ -332,20 +353,23 @@ class WebRTCSender:
 
         if pts != Gst.CLOCK_TIME_NONE:
             with self.rtp_mapping_lock:
-                self.capture_by_pts[pts] = {
-                    "frame_id": self.frame_id,
-                    "capture_time_ns": wall_time_ns,
-                    "capture_time_ms": wall_time_ns / 1_000_000.0,
-                    "capture_timestamp": wall_timestamp,
-                    "monotonic_ns": monotonic_ns,
-                    "pts_ns": pts,
-                    "pts_ms": pts_ms,
-                }
+                self.source_frames.append(
+                    {
+                        "frame_id": self.frame_id,
+                        "capture_time_ns": wall_time_ns,
+                        "capture_time_ms": wall_time_ns / 1_000_000.0,
+                        "capture_timestamp": wall_timestamp,
+                        "monotonic_ns": monotonic_ns,
+                        "pts_ns": pts,
+                        "pts_ms": pts_ms,
+                    }
+                )
 
-                # Keep memory bounded.
-                if len(self.capture_by_pts) > 120:
-                    oldest_pts = next(iter(self.capture_by_pts))
-                    del self.capture_by_pts[oldest_pts]
+                # Keep memory bounded.  A dropped record re-anchors the
+                # pairing offset on the next encoded frame.
+                while len(self.source_frames) > 600:
+                    self.source_frames.popleft()
+                    self.skipped_source_frames += 1
 
         # ============================================================
         # FPS
@@ -435,25 +459,44 @@ class WebRTCSender:
 
         with self.rtp_mapping_lock:
 
-            if rtp_timestamp in self.rtp_timestamps_sent:
+            # One H.264 frame spans many RTP packets and they all carry the
+            # same RTP timestamp, so only the frame's first packet is paired.
+            if rtp_timestamp == self.last_rtp_timestamp:
                 return Gst.PadProbeReturn.OK
 
-            source = self.capture_by_pts.get(pts)
+            self.last_rtp_timestamp = rtp_timestamp
 
-            if source is None:
-                print(
-                    "[RTP] No source timestamp for "
-                    f"RTP={rtp_timestamp} PTS={pts}"
-                )
+            if not self.source_frames:
+                self.map_missed += 1
                 return Gst.PadProbeReturn.OK
 
-            self.rtp_timestamps_sent.add(rtp_timestamp)
+            if self.pts_offset is None:
+                # Bootstrap: the oldest unpaired source frame is this frame.
+                source = self.source_frames.popleft()
+                self.pts_offset = pts - source["pts_ns"]
+            else:
+                # Advance to the source frame this PTS belongs to.  Records
+                # that were skipped upstream are dropped here so the pairing
+                # stays aligned.
+                target = pts - self.pts_offset
 
-            # Keep the deduplication set bounded.
-            if len(self.rtp_timestamps_sent) > 240:
-                self.rtp_timestamps_sent = set(
-                    list(self.rtp_timestamps_sent)[-120:]
-                )
+                while (
+                    len(self.source_frames) > 1
+                    and self.source_frames[1]["pts_ns"] <= target
+                ):
+                    self.source_frames.popleft()
+                    self.skipped_source_frames += 1
+
+                source = self.source_frames.popleft()
+
+                observed = pts - source["pts_ns"]
+
+                if observed != self.pts_offset:
+                    self.offset_last_delta = observed - self.pts_offset
+                    self.offset_adjustments += 1
+                    self.pts_offset = observed
+
+            self.map_matched += 1
 
             mapping = {
                 "type": "frame_rtp_mapping",
@@ -474,6 +517,30 @@ class WebRTCSender:
     # =================================================================
     # Send RTP mappings in small batches
     # =================================================================
+
+    def report_mapping_stats(self):
+
+        with self.rtp_mapping_lock:
+            matched = self.map_matched
+            missed = self.map_missed
+            offset = self.pts_offset
+            adjustments = self.offset_adjustments
+            last_delta = self.offset_last_delta
+            skipped = self.skipped_source_frames
+            pending = len(self.source_frames)
+
+        total = matched + missed
+
+        rate = (100.0 * matched / total) if total else 0.0
+
+        print(
+            f"[MAP] matched={matched} missed={missed} "
+            f"rate={rate:.1f}% offset={offset} "
+            f"offset_fixes={adjustments} last_delta={last_delta} "
+            f"skipped={skipped} pending={pending}"
+        )
+
+        return True
 
     def flush_rtp_mappings(self):
 
@@ -942,6 +1009,11 @@ class WebRTCSender:
         GLib.timeout_add(
             50,
             self.flush_rtp_mappings
+        )
+
+        GLib.timeout_add(
+            1000,
+            self.report_mapping_stats
         )
 
         print(

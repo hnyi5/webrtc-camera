@@ -1037,6 +1037,16 @@ function trimPendingFrames() {
             pendingVideoFrames.keys().next().value;
 
         pendingVideoFrames.delete(firstKey);
+
+        /*
+         * The mapping for this frame never arrived.  Without this, Match/Miss
+         * only counted frames whose rVFC metadata lacked an RTP timestamp,
+         * so total mapping failure would still display as healthy.
+         */
+        latencyMissCount++;
+
+        latencyMatchStatsElement.textContent =
+            `${latencyMatchCount} / ${latencyMissCount}`;
     }
 }
 
@@ -1144,7 +1154,8 @@ function updateMatchedLatency(
 }
 
 function processVideoFrameObservation(
-    metadata
+    metadata,
+    now
 ) {
 
     const rtpTimestamp =
@@ -1492,9 +1503,25 @@ function videoFrameCallback(
 
     renderedFrames++;
 
-    processVideoFrameObservation(
-        metadata
-    );
+    try {
+
+        processVideoFrameObservation(
+            metadata,
+            now
+        );
+    }
+    catch (error) {
+
+        /*
+         * An exception here used to escape the callback before it could
+         * re-register itself, which killed the measurement loop for the
+         * rest of the page's life.  Never let one frame do that.
+         */
+        console.error(
+            "Latency processing failed:",
+            error
+        );
+    }
 
     if (
         now - fpsLastTime >= 1000
