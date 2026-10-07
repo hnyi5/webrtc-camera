@@ -78,6 +78,8 @@ const READ_PANEL = `JSON.stringify({
   processing: document.getElementById("latencyProcessing")?.textContent,
   rtpTimestamp: document.getElementById("latencyRtpTimestamp")?.textContent,
   windowStats: document.getElementById("latencyWindowStats")?.textContent,
+  clockOffset: document.getElementById("latencyClockOffset")?.textContent,
+  clockRtt: document.getElementById("latencyClockRtt")?.textContent,
   matchMiss: document.getElementById("latencyMatchStats")?.textContent,
   metadata: document.getElementById("latencyMetadata")?.textContent,
   videoWidth: document.getElementById("video")?.videoWidth,

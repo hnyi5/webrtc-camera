@@ -569,8 +569,18 @@
                 </div>
 
                 <div class="latency-detail-row">
+                    <span>Clock offset (sender − browser)</span>
+                    <span id="latencyClockOffset">calibrating…</span>
+                </div>
+
+                <div class="latency-detail-row">
+                    <span>Clock sync RTT</span>
+                    <span id="latencyClockRtt">--</span>
+                </div>
+
+                <div class="latency-detail-row">
                     <span>Clock basis</span>
-                    <span id="latencyClockStatus">Sender epoch ↔ browser Date.now()</span>
+                    <span id="latencyClockStatus">NTP-style over WebSocket</span>
                 </div>
 
                 <div class="latency-detail-row">
@@ -681,6 +691,12 @@ const latencyMatchStatsElement =
 
 const latencyClockStatusElement =
     document.getElementById("latencyClockStatus");
+
+const latencyClockOffsetElement =
+    document.getElementById("latencyClockOffset");
+
+const latencyClockRttElement =
+    document.getElementById("latencyClockRtt");
 
 const latencyMetadataElement =
     document.getElementById("latencyMetadata");
@@ -936,6 +952,118 @@ ws.onopen = () => {
  * the exact same video frame; it is not used as a wall-clock.
  */
 
+/* -------------------------------------------------------
+   Sender ↔ browser clock offset
+
+   The two machines have two independent clocks, so a timestamp
+   produced by the sender is meaningless as an absolute instant
+   until we know how far apart the clocks are.
+
+   This is the classic NTP four-timestamp exchange, run over the
+   signaling WebSocket we already have:
+
+       t1 = browser clock when the request leaves
+       t2 = sender clock when the request arrives
+       t3 = sender clock when the reply leaves
+       t4 = browser clock when the reply arrives
+
+       offset = ((t2 - t1) + (t3 - t4)) / 2
+
+   That offset is (sender clock - browser clock).  Subtracting it
+   from a sender timestamp converts it onto the browser's clock, so
+   it can be compared with a browser timestamp directly.
+
+   The estimate is only wrong by half the path asymmetry, so we keep
+   a short history and trust the sample with the smallest round trip.
+------------------------------------------------------- */
+
+let clockOffsetMs = null;
+let clockOffsetRttMs = null;
+
+const clockSamples = [];
+
+const CLOCK_SAMPLE_MAX = 20;
+
+/*
+ * The browser's own epoch-based clock, on the same performance
+ * timeline that rVFC hands us in `now` / receiveTime /
+ * expectedDisplayTime.
+ */
+function browserEpochMs() {
+
+    return performance.timeOrigin +
+        performance.now();
+}
+
+function requestClockSync() {
+
+    if (ws.readyState !== WebSocket.OPEN) {
+        return;
+    }
+
+    ws.send(
+        JSON.stringify({
+            type: "clock_sync",
+            t1: browserEpochMs()
+        })
+    );
+}
+
+function handleClockSyncReply(message) {
+
+    const t4 = browserEpochMs();
+
+    const t1 = Number(message.t1);
+    const t2 = Number(message.t2);
+    const t3 = Number(message.t3);
+
+    if (
+        !Number.isFinite(t1) ||
+        !Number.isFinite(t2) ||
+        !Number.isFinite(t3)
+    ) {
+        return;
+    }
+
+    /*
+     * Round trip with the sender's own processing time removed, so
+     * this is the path cost only.
+     */
+    const rtt =
+        (t4 - t1) -
+        (t3 - t2);
+
+    const offset =
+        ((t2 - t1) + (t3 - t4)) / 2;
+
+    clockSamples.push({ rtt, offset });
+
+    if (clockSamples.length > CLOCK_SAMPLE_MAX) {
+        clockSamples.shift();
+    }
+
+    let best = clockSamples[0];
+
+    for (const sample of clockSamples) {
+
+        if (sample.rtt < best.rtt) {
+            best = sample;
+        }
+    }
+
+    clockOffsetMs = best.offset;
+    clockOffsetRttMs = best.rtt;
+
+    latencyClockOffsetElement.textContent =
+        clockOffsetMs.toFixed(1) + " ms";
+
+    latencyClockRttElement.textContent =
+        clockOffsetRttMs.toFixed(2) + " ms";
+}
+
+/* Re-estimate once a second; the offset can drift or step. */
+setInterval(requestClockSync, 1000);
+
 const rtpFrameMap = new Map();
 const pendingVideoFrames = new Map();
 
@@ -1066,6 +1194,22 @@ function updateMatchedLatency(
         return;
     }
 
+    /*
+     * Move the sender's timestamp onto the browser's clock.
+     *
+     * captureEpochMs is expressed in the sender's clock.  Subtracting
+     * the measured offset yields the instant the browser's own clock
+     * would have shown at that moment, which is what the browser
+     * timestamps below are expressed in.  Only then is the
+     * subtraction below a duration rather than a mix of two clocks.
+     */
+    const clockCalibrated =
+        Number.isFinite(clockOffsetMs);
+
+    const captureEpochOnBrowserClock =
+        captureEpochMs -
+        (clockCalibrated ? clockOffsetMs : 0);
+
     const callbackEpochMs =
         frameObservation.callbackEpochMs;
 
@@ -1077,7 +1221,7 @@ function updateMatchedLatency(
 
     const captureToCallback =
         callbackEpochMs -
-        captureEpochMs;
+        captureEpochOnBrowserClock;
 
     latencyCaptureCallbackElement.textContent =
         formatLatency(captureToCallback);
@@ -1086,7 +1230,7 @@ function updateMatchedLatency(
 
         const captureToReceive =
             receiveEpochMs -
-            captureEpochMs;
+            captureEpochOnBrowserClock;
 
         const receiveToCallback =
             callbackEpochMs -
@@ -1111,7 +1255,7 @@ function updateMatchedLatency(
 
         const captureToDisplay =
             expectedDisplayEpochMs -
-            captureEpochMs;
+            captureEpochOnBrowserClock;
 
         latencyCaptureDisplayElement.textContent =
             formatLatency(captureToDisplay);
@@ -1150,7 +1294,10 @@ function updateMatchedLatency(
         `${latencyMatchCount} / ${latencyMissCount}`;
 
     latencyMetadataElement.textContent =
-        `matched frame ${mapping.frame_id ?? "--"}`;
+        `matched frame ${mapping.frame_id ?? "--"}` +
+        (clockCalibrated
+            ? ""
+            : " (clock not calibrated yet)");
 }
 
 function processVideoFrameObservation(
@@ -1315,6 +1462,16 @@ ws.onmessage = async (event) => {
         "[SIGNALING] Received: " +
         message.type
     );
+
+    /* ---------- CLOCK SYNC ---------- */
+
+    if (message.type === "clock_sync_reply") {
+
+        handleClockSyncReply(message);
+
+        return;
+    }
+
 
     /* ---------- RTP FRAME MAPPING ---------- */
 
@@ -2003,7 +2160,7 @@ log(
 );
 
 latencyClockStatusElement.textContent =
-    "Sender epoch ↔ browser Date.now()";
+    "NTP-style over WebSocket";
 
 </script>
 
