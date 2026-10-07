@@ -771,11 +771,61 @@ const ws =
 let remoteDescriptionSet = false;
 
 /*
- * Set once a session has actually worked.  The reload-on-drop below must
- * not fire otherwise, or a sender that is simply not running yet would
- * cause an endless reload loop.
+ * Set once a session has actually worked, and once an offer has arrived.
+ * Reloading to recover must not fire before either, or a sender that is
+ * simply not running yet would cause a pointless reload loop.
  */
 let hadLiveSession = false;
+let hadOffer = false;
+
+/*
+ * Rebuild the session from scratch.
+ *
+ * Recovery needs both ends to start over: this page needs a new
+ * RTCPeerConnection (a failed one cannot be rebuilt in place), and the sender
+ * restarts its pipeline when it sees request_offer on an element that has
+ * already negotiated.
+ *
+ * The attempt counter stops a sender that cannot start at all from becoming
+ * an endless reload loop.
+ */
+const RELOAD_MAX = 5;
+const RELOAD_DELAY_MS = 4000;
+
+function scheduleReload(reason) {
+
+    if (!hadLiveSession && !hadOffer) {
+        return;
+    }
+
+    const attempts =
+        Number(sessionStorage.getItem("dshReloadAttempts") || "0");
+
+    if (attempts >= RELOAD_MAX) {
+
+        log(
+            `[SIGNALING] ${reason}; ${RELOAD_MAX} attempts already used, ` +
+            "not reloading again"
+        );
+
+        return;
+    }
+
+    sessionStorage.setItem(
+        "dshReloadAttempts",
+        String(attempts + 1)
+    );
+
+    log(
+        `[SIGNALING] ${reason}; reloading in ` +
+        `${RELOAD_DELAY_MS / 1000} s (attempt ${attempts + 1}/${RELOAD_MAX})`
+    );
+
+    setTimeout(
+        () => location.reload(),
+        RELOAD_DELAY_MS
+    );
+}
 
 let pendingCandidates = [];
 
@@ -849,9 +899,25 @@ pc.onconnectionstatechange = () => {
         setConnectionStatus("connected");
 
         hadLiveSession = true;
+
+        /* A working session clears the reconnection budget. */
+        sessionStorage.setItem("dshReloadAttempts", "0");
+    }
+    else if (state === "failed") {
+
+        peerConnectionElement.className =
+            "stat-value bad";
+
+        setConnectionStatus("failed");
+
+        /*
+         * A failed peer connection cannot be rebuilt in place, and the
+         * signaling socket may well still be healthy, so waiting for it to
+         * close would leave the page stuck forever.
+         */
+        scheduleReload("Peer connection failed");
     }
     else if (
-        state === "failed" ||
         state === "disconnected" ||
         state === "closed"
     ) {
@@ -1017,11 +1083,25 @@ const clockSamples = [];
  */
 const CLOCK_RTT_MAX_MS = 100;
 
-/* Median of this many recent samples: no single sample can move it. */
-const CLOCK_SAMPLE_MAX = 5;
+/* How many samples to keep, and how old a sample may be to still count. */
+const CLOCK_SAMPLE_MAX = 8;
+const CLOCK_WINDOW_MS = 5000;
 
 /* Older than this and the estimate must not be turned into a number. */
 const CLOCK_STALE_MS = 5000;
+
+/*
+ * Three consecutive samples this close to each other, but this far from the
+ * current estimate, is a clock step rather than jitter.
+ */
+const CLOCK_STEP_AGREE_MS = 5;
+const CLOCK_STEP_MS = 50;
+
+/*
+ * A negative latency is physically impossible.  Anything below this is a
+ * broken clock estimate, not a measurement, and is displayed as "--".
+ */
+const CLOCK_IMPLAUSIBLE_MS = -20;
 
 /*
  * The browser's own epoch-based clock, on the same performance
@@ -1087,30 +1167,73 @@ function handleClockSyncReply(message) {
         return;
     }
 
-    clockSamples.push({ rtt, offset });
+    clockSamples.push({ rtt, offset, at: t4 });
 
-    if (clockSamples.length > CLOCK_SAMPLE_MAX) {
+    while (clockSamples.length > CLOCK_SAMPLE_MAX) {
         clockSamples.shift();
     }
 
     /*
-     * Median, not "smallest round trip".
-     *
-     * The old rule held on to whichever sample had the smallest round trip,
-     * which meant a stale sample could win forever and a real clock step
-     * could be ignored indefinitely.  A median cannot be moved by one bad
-     * sample and follows a genuine step within a few samples.
+     * Drop anything older than the window.  This is what stops a stale
+     * sample from winning forever -- the job the median was wrongly given.
      */
-    const offsets = clockSamples
-        .map((sample) => sample.offset)
-        .sort((a, b) => a - b);
+    while (
+        clockSamples.length > 0 &&
+        (t4 - clockSamples[0].at) > CLOCK_WINDOW_MS
+    ) {
+        clockSamples.shift();
+    }
 
-    const middle =
-        Math.floor(offsets.length / 2);
+    /*
+     * A real clock step changes the offset by far more than jitter does, so
+     * look at the three newest samples first: if they agree with each other
+     * but not with what we currently believe, follow them.
+     */
+    const newest = clockSamples.slice(-3);
 
-    clockOffsetMs = (offsets.length % 2 === 1)
-        ? offsets[middle]
-        : (offsets[middle - 1] + offsets[middle]) / 2;
+    const newestOffsets = newest.map((sample) => sample.offset);
+
+    const newestSpread =
+        Math.max(...newestOffsets) -
+        Math.min(...newestOffsets);
+
+    const stepConfirmed =
+        newest.length === 3 &&
+        newestSpread <= CLOCK_STEP_AGREE_MS &&
+        (
+            !Number.isFinite(clockOffsetMs) ||
+            Math.abs(newestOffsets[1] - clockOffsetMs) > CLOCK_STEP_MS
+        );
+
+    if (stepConfirmed) {
+
+        clockOffsetMs = newestOffsets[1];
+    }
+    else {
+
+        /*
+         * Otherwise trust the smallest round trip.
+         *
+         * The round trip measured here includes how late this browser's main
+         * thread got around to handling the reply, and that delay pushes the
+         * offset in one direction only:
+         *
+         *     offset error = -(delay) / 2
+         *
+         * The sample with the smallest round trip is the one where this
+         * thread was least busy, so it carries the least of that bias.
+         */
+        let best = clockSamples[0];
+
+        for (const sample of clockSamples) {
+
+            if (sample.rtt < best.rtt) {
+                best = sample;
+            }
+        }
+
+        clockOffsetMs = best.offset;
+    }
 
     clockOffsetRttMs = rtt;
     clockOffsetAtMs = t4;
@@ -1349,6 +1472,28 @@ function updateMatchedLatency(
     const captureToCallback =
         callbackEpochMs -
         captureEpochOnBrowserClock;
+
+    /*
+     * Last line of defence.
+     *
+     * A delay cannot be negative, so a negative result means the clock
+     * estimate is broken -- whatever the reason.  Print "no measurement"
+     * rather than a number that cannot be true.
+     */
+    if (captureToCallback < CLOCK_IMPLAUSIBLE_MS) {
+
+        latencyMatchCount++;
+
+        latencyMatchStatsElement.textContent =
+            `${latencyMatchCount} / ${latencyMissCount}`;
+
+        latencyMetadataElement.textContent =
+            `clock estimate rejected (${captureToCallback.toFixed(1)} ms)`;
+
+        softwareLatencyElement.textContent = "--";
+
+        return;
+    }
 
     latencyCaptureCallbackElement.textContent =
         formatLatency(captureToCallback);
@@ -1624,6 +1769,8 @@ ws.onmessage = async (event) => {
 
     if (message.type === "offer") {
 
+        hadOffer = true;
+
         const offer = {
             type: "offer",
             sdp: message.sdp
@@ -1757,22 +1904,12 @@ ws.onclose = () => {
     setConnectionStatus("failed");
 
     /*
-     * The signaling socket is the only channel for frame timings and for
-     * the clock offset, and neither side can renegotiate over a closed
-     * socket.  The sender runs under a restart loop, so reloading here
-     * gives both sides a clean start.
+     * The signaling socket carries every frame timing and the clock offset.
+     * The sender exits on its own side of this, and the restart loop brings
+     * it back with a fresh offer, so rebuilding this page completes the
+     * recovery.
      */
-    if (hadLiveSession) {
-
-        log(
-            "[SIGNALING] Reloading in 3 s to re-establish the session"
-        );
-
-        setTimeout(
-            () => location.reload(),
-            3000
-        );
-    }
+    scheduleReload("WebSocket closed");
 };
 
 

@@ -34,6 +34,11 @@ class WebRTCSender:
         self.ws = None
         self.ws_connected = threading.Event()
 
+        # True once a remote SDP answer has been applied to this webrtcbin.
+        # From that point the element's ICE/DTLS state belongs to one
+        # specific browser, and a different browser needs a fresh element.
+        self.remote_answer_set = False
+
         # ============================================================
         # Software timestamp / frame statistics
         # ============================================================
@@ -801,6 +806,28 @@ class WebRTCSender:
 
         print("[WebRTC] A browser asked for a fresh offer")
 
+        # If this element already completed a negotiation with another
+        # browser, renegotiating it does not work: the SDP exchange succeeds
+        # but ICE never comes up, because the element's ICE and DTLS state
+        # still belongs to the old peer.  Observed exactly that after a page
+        # reload -- a full offer/answer exchange followed by
+        # connectionState "failed".
+        #
+        # A fresh pipeline is the only reliable recovery, and the restart
+        # loop already provides one, so exit and let it start over.
+        if self.remote_answer_set:
+
+            print(
+                "[WebRTC] Already negotiated once; restarting the pipeline "
+                "instead of renegotiating"
+            )
+
+            self.loop.quit()
+
+            return False
+
+        # Nothing has negotiated on this element yet, so a fresh offer here
+        # is safe and avoids a needless restart.
         self.on_negotiation_needed(
             self.webrtc
         )
@@ -920,6 +947,8 @@ class WebRTCSender:
         print(
             "[WebRTC] Setting remote SDP answer"
         )
+
+        self.remote_answer_set = True
 
         result, sdp_message = (
             GstSdp.sdp_message_new_from_text(
