@@ -636,6 +636,42 @@ class WebRTCSender:
         )
 
         # ------------------------------------------------------------
+        # Clock synchronisation (NTP-style, initiated by the browser)
+        #
+        # The browser and this sender are two different machines with two
+        # independent clocks, so a time recorded here means nothing on the
+        # browser's clock until the difference between them is known.
+        #
+        # The browser sends t1 (its clock).  We answer with t2, the time we
+        # received it, and t3, the time we send the reply.  The browser then
+        # solves for offset = sender_clock - browser_clock and subtracts it
+        # from every capture timestamp we send.
+        #
+        # Without this, every latency is wrong by the entire clock difference
+        # (measured ~194 ms on this setup) -- and that difference is not even
+        # constant, because the two machines are disciplined by two different
+        # time sources.
+        # ------------------------------------------------------------
+
+        if message_type == "clock_sync":
+
+            t1 = data.get("t1")
+
+            if t1 is None:
+                return
+
+            self.send_signaling_message(
+                {
+                    "type": "clock_sync_reply",
+                    "t1": t1,
+                    "t2": time.time() * 1000.0,
+                    "t3": time.time() * 1000.0,
+                }
+            )
+
+            return
+
+        # ------------------------------------------------------------
         # Answer
         # ------------------------------------------------------------
 
