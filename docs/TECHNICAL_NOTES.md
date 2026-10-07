@@ -23,7 +23,7 @@ USB Camera → V4L2 → GStreamer → H.264 → RTP → WebRTC → Chrome
 - 延迟测量已经从人工观察/错误 telemetry 关联推进到 **RTP timestamp 同帧关联**。
 
 当前最重要的未完成事项：
-1. 实际运行验证 RTP timestamp 映射稳定性。
+1. ~~实际运行验证 RTP timestamp 映射稳定性。~~ ✅ 2026-10-07 已完成，见 §25。
 2. 对比 x264 与 Native H.264 的 CPU、码率、延迟、稳定性。
 3. 完成 P50/P95/P99/Max 统计。
 4. 做 chrony/NTP 跨机器时钟同步。
@@ -589,13 +589,16 @@ latency statistics
 - [x] Direct Native H.264 → WebRTC 初步跑通
 - [x] 动态 timestamp overlay
 - [x] rVFC RTP timestamp 获取
+- [x] RTP timestamp → source 帧映射稳定（见 §25）
+- [x] 真实窗口 1920×1080 稳定 30 FPS
+- [x] 同帧端到端延迟 117–148 ms，Match 100%（见 §25）
 
 ## 初步验证 / 仍需测试
 
 - [~] Direct H.264 长时间稳定性
-- [~] RTP timestamp → source PTS 映射
-- [~] RTP timestamp 同帧 latency
-- [~] P50/P95/P99/Max
+- [x] RTP timestamp → source 帧映射（已验证，见 §25）
+- [x] RTP timestamp 同帧 latency（已验证，见 §25）
+- [~] P50/P95/P99/Max（P50/P95/Max 已实时显示；P99 未做）
 - [~] 跨机器 Source → Display
 - [~] Native H.264 与 x264 全面对比
 
@@ -614,6 +617,11 @@ latency statistics
 - [ ] 与 Phantom Bridge 完整结构对照
 
 # 21. 下一次继续工作的入口
+
+> **2026-10-07 更新**：RTP timestamp 同帧映射**已验证稳定**（见 §25），
+> 不要再从「运行 Sender + Chrome，先看 Match/Miss」开始。
+> 当前真正的下一步是**跨机器时钟同步**（§25.5）。
+> 下面这一节保留为历史记录。
 
 不要重新从摄像头/GStreamer 基础开始。
 
@@ -711,3 +719,69 @@ TURN fallback
 # 24. 一句话总结
 
 > **项目已经从“摄像头能不能传到浏览器”，推进到“能解释每一层、验证每一层，并开始建立同帧、跨机器、可统计的端到端延迟测量体系”。**
+
+---
+
+# 25. 2026-10-07 验证结果与两个根因
+
+## 25.1 实测结论（真实 Chrome 窗口，非无头）
+
+| 指标 | 实测值 |
+|---|---|
+| 分辨率 / 浏览器帧率 | 1920×1080 / 稳定 **29.6–32.8 fps** |
+| sender 侧采集帧率 | 29.94–30.67 fps |
+| 端到端同帧延迟 | **117.9–147.9 ms**（Source → Callback） |
+| P50 / P95 / Max | 约 130 / 138 / 139 ms（典型 1 秒窗） |
+| Source → Receive | 110.4–126.3 ms |
+| Source → Expected display | 124.0–154.0 ms |
+| Receive → Callback | 1.1–26.5 ms |
+| Match / Miss | **1073 / 0**；连续 7 分钟长跑为 **11176 / 0** |
+| 码率 | 2.60–5.12 Mbps |
+| 浏览器端异常 | 0 |
+| `processingDuration` | 恒为 0.0 ms —— Chrome 对本链路不提供，**该项不可用** |
+
+验证方式：无头/真实 Chrome 均通过 CDP 读取页面面板（`tools/cdp_probe.mjs`），
+不依赖人工读数。
+
+## 25.2 根因一：x264enc 会重写 buffer PTS
+
+`source probe` 看到的是运行时间基准（例如 `263644238`），而 `rtph264pay`
+一侧看到的是被**整体平移一个常数**（约 3600 秒）之后的值
+（例如 `3600000403991139`）。原实现用 PTS 相等查表，两侧属于不同域，
+**100% 查不到** —— 实测 202/202 全部 miss，日志狂刷 `No source timestamp`。
+
+修复：不再依赖 PTS 相等，改为 source 帧进入 FIFO，**按到达顺序**与编码帧
+配对；从首帧测得偏移常数并逐帧重锚。这样上游丢帧只会被跳过，而不会让
+之后的所有测量整体错位一帧。
+
+诊断手段：`tools/pts_diag.py`（在链路每一级挂 probe 打印 PTS）、
+`tools/sender_patch_probe.py`（不改原文件给回调插桩，可捕获被 PyGObject
+吞进 stderr 的异常）。
+
+## 25.3 根因二：浏览器端 `now` 未定义
+
+`processVideoFrameObservation()` 内部引用了外层 rVFC 回调的参数 `now`，
+但它**没有被作为参数传入** → 第一个带 `rtpTimestamp` 的帧就抛
+`ReferenceError`；异常逃出 rVFC 回调，导致它无法重新注册自己，
+**测量循环永久死亡**，页面上只剩 FPS 数字还在动。
+
+这解释了 §12 第三阶段「拿到了 rtpTimestamp 却算不出延迟」的现象：
+不是拿不到数据，是拿到后立刻崩了。
+
+## 25.4 其他修正
+
+- `rtp_queue` 改为有界（`max-size-buffers=32`，其余上限关闭）。默认上限
+  在**没有消费者**时约 0.7 秒就把整条管线反压堵死（实测 12 秒只跑 15 帧）。
+  这曾导致「摄像头只有 25 fps」的**误判** —— 有正常消费者时是满 30 fps。
+- pending 帧一直没等到 mapping 而被淘汰时计为 miss。否则映射整体失效
+  也会显示成健康状态。
+
+## 25.5 仍然待办
+
+1. **VM ↔ 主机时钟偏差尚未精确测定。** 同帧延迟是 sender 的 epoch 减
+   浏览器的 epoch，偏差会**整体平移**所有延迟数字。在测出来之前，
+   117–148 ms 应读作「相对可信、绝对值待校」。
+2. `processingDuration` 恒为 0，解码耗时这一项拿不到。
+3. P99 未统计（P50/P95/Max 已实时显示）。
+4. §16 的 chrony/NTP 跨机器同步，以及公网、NAT/STUN/TURN、长时间稳定性
+   等仍未开始。
