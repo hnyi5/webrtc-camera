@@ -1,0 +1,12 @@
+# 仓库内一律使用 LF，与检出机器无关。
+# 本项目运行环境是 Linux 虚拟机；CRLF 会让 bash 脚本报 \r 错误，
+# 也会造成同一个文件在两台机器上大小不同的困惑。
+* text=auto eol=lf
+
+# 二进制文件禁止换行符转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.mp4  binary
+*.h264 binary
+*.mjpeg binary
