@@ -1130,8 +1130,11 @@ class WebRTCSender:
 
         # Flush RTP timestamp mappings at 20 Hz.  This is only the
         # metadata transport; video itself remains untouched.
+        # 10 Hz instead of 20 Hz.  A mapping that arrives 100 ms later is
+        # still far ahead of the browser's 120-frame pending window, and it
+        # halves the per-message work on the browser's main thread.
         GLib.timeout_add(
-            50,
+            100,
             self.flush_rtp_mappings
         )
 
