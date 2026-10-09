@@ -442,6 +442,11 @@
 
                 </div>
 
+                <div class="stat-row">
+                    <span class="stat-label">Decoded frames/s</span>
+                    <span class="stat-value" id="decodedFps">--</span>
+                </div>
+
             </div>
 
 
@@ -631,6 +636,9 @@ const resolutionElement =
 const codecElement =
     document.getElementById("codec");
 
+const decodedFpsElement =
+    document.getElementById("decodedFps");
+
 const packetsReceivedElement =
     document.getElementById("packetsReceived");
 
@@ -706,6 +714,24 @@ const latencyMetadataElement =
    Logging
 ------------------------------------------------------- */
 
+/*
+ * The event log is bounded on purpose.
+ *
+ * It used to be `logElement.textContent += line`, which copies the entire
+ * accumulated string and forces a full re-layout on every call.  With mapping
+ * batches arriving 20 times a second the log reached 220 KB within an hour and
+ * each append then cost hundreds of microseconds on the main thread.  That
+ * starved requestVideoFrameCallback -- the measured frame rate fell to a few
+ * fps while the video itself was perfectly smooth -- and delayed the
+ * clock-sync replies enough to bias the clock offset by tens of milliseconds,
+ * which is what made the latencies drift and finally go negative.
+ */
+const LOG_MAX_LINES = 150;
+
+const logLines = [];
+
+let logScrollScheduled = false;
+
 function log(message) {
 
     console.log(message);
@@ -713,11 +739,34 @@ function log(message) {
     const timestamp =
         new Date().toLocaleTimeString();
 
-    logElement.textContent +=
-        `[${timestamp}] ${message}\n`;
+    logLines.push(`[${timestamp}] ${message}`);
 
-    logElement.scrollTop =
-        logElement.scrollHeight;
+    if (logLines.length > LOG_MAX_LINES) {
+        logLines.splice(
+            0,
+            logLines.length - LOG_MAX_LINES
+        );
+    }
+
+    logElement.textContent =
+        logLines.join("\n");
+
+    /*
+     * Reading scrollHeight forces a synchronous layout.  Once per animation
+     * frame is plenty; once per log line is what made this expensive.
+     */
+    if (!logScrollScheduled) {
+
+        logScrollScheduled = true;
+
+        requestAnimationFrame(() => {
+
+            logScrollScheduled = false;
+
+            logElement.scrollTop =
+                logElement.scrollHeight;
+        });
+    }
 }
 
 
@@ -1081,14 +1130,25 @@ const clockSamples = [];
  * Without this check one 2490 ms sample (taken while the socket was dying)
  * produced a -1454 ms "offset" and the page showed -1265 ms of latency.
  */
-const CLOCK_RTT_MAX_MS = 100;
+/*
+ * The smallest-round-trip selection below does the real filtering.  This
+ * limit only rejects the pathological case: a 2490 ms sample was once
+ * accepted and produced a -1454 ms offset.  It is deliberately generous,
+ * because a busy main thread legitimately produces round trips of tens of
+ * milliseconds, and rejecting those would simply stop the measurement.
+ */
+const CLOCK_RTT_MAX_MS = 250;
 
-/* How many samples to keep, and how old a sample may be to still count. */
-const CLOCK_SAMPLE_MAX = 8;
-const CLOCK_WINDOW_MS = 5000;
+/*
+ * Keep enough samples over a long enough window that a moment when the main
+ * thread was idle is almost certain to be in it.  That sample -- the smallest
+ * round trip -- is the one carrying the least one-sided bias.
+ */
+const CLOCK_SAMPLE_MAX = 12;
+const CLOCK_WINDOW_MS = 15000;
 
 /* Older than this and the estimate must not be turned into a number. */
-const CLOCK_STALE_MS = 5000;
+const CLOCK_STALE_MS = 10000;
 
 /*
  * Three consecutive samples this close to each other, but this far from the
@@ -1289,6 +1349,19 @@ function updateClockUi() {
 
 /* Re-estimate once a second; the offset can drift or step. */
 setInterval(requestClockSync, 1000);
+
+/* Report the mapping traffic without logging every batch. */
+setInterval(() => {
+
+    if (mappingBatchesSinceReport > 0) {
+
+        log(
+            `[SIGNALING] ${mappingBatchesSinceReport} frame-mapping batches`
+        );
+
+        mappingBatchesSinceReport = 0;
+    }
+}, 1000);
 
 /* Repaint the clock rows even if no frame arrives, so a stale estimate
    becomes visible instead of looking healthy. */
@@ -1722,15 +1795,28 @@ function handleRtpMapping(mapping) {
    WebSocket messages
 ------------------------------------------------------- */
 
+/*
+ * Frame mappings arrive as one batch every 50 ms.  Logging each one was the
+ * flood described above, so they are counted here and reported once a second.
+ */
+let mappingBatchesSinceReport = 0;
+
 ws.onmessage = async (event) => {
 
     const message =
         JSON.parse(event.data);
 
-    log(
-        "[SIGNALING] Received: " +
-        message.type
-    );
+    if (message.type === "frame_rtp_mapping_batch") {
+
+        mappingBatchesSinceReport++;
+    }
+    else {
+
+        log(
+            "[SIGNALING] Received: " +
+            message.type
+        );
+    }
 
     /* ---------- CLOCK SYNC ---------- */
 
@@ -2070,6 +2156,7 @@ video.addEventListener(
 
 let previousBytesReceived = null;
 let previousStatsTime = null;
+let previousFramesDecoded = null;
 
 
 /*
@@ -2163,6 +2250,33 @@ async function updateStats() {
                         formatBitrate(
                             bitrate
                         );
+
+                    /*
+                     * Frames the decoder actually produced.
+                     *
+                     * Unlike the rVFC frame rate in the header, this does not
+                     * depend on the page being composited, so it keeps
+                     * reporting the truth when the browser window is not
+                     * being drawn at full rate.
+                     */
+                    if (
+                        previousFramesDecoded !== null &&
+                        inboundVideo.framesDecoded !== undefined
+                    ) {
+
+                        const framesDelta =
+                            inboundVideo.framesDecoded -
+                            previousFramesDecoded;
+
+                        decodedFpsElement.textContent =
+                            (framesDelta * 1000 / timeDelta)
+                                .toFixed(1) + " fps";
+                    }
+                }
+
+                if (inboundVideo.framesDecoded !== undefined) {
+                    previousFramesDecoded =
+                        inboundVideo.framesDecoded;
                 }
             }
 
