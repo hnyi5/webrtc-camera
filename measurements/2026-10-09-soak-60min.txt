@@ -1,0 +1,29 @@
+﻿========================================================================
+file            : C:\Users\dell\Documents\deepseek-harness\default-workspace\long-test\long-test-20261009-1257.jsonl
+window          : 2026-10-09 12:57:12.419000
+                  2026-10-09 13:57:09.408000
+duration        : 59.9 min
+samples         : 719  (read errors 0, browser exceptions 0)
+========================================================================
+metric                             n      min      P50      P95      P99      max     mean
+latency (source->callback)       694     20.9     46.0     59.1     63.9     69.7     45.8
+source->receive                  694     12.8     18.7     26.3     34.6     59.0     19.5
+receive->callback                694      1.2     26.6     40.7     47.5     54.9     26.3
+source->expected display         694     27.0     51.0     63.0     69.3     73.3     50.6
+rvfc frames/s (presented)        694      2.6     29.8     30.8     30.9     30.9     29.9
+
+fps      : min 2.6  P50 29.8  P95 30.8  max 30.9
+bitrate  : min 0.00  P50 3.99  max 385.00 Mbps
+
+clock offset: first -44.2 ms  last -114.9 ms  drift -70.7 ms over 60 min (-70.8 ms/h)
+              min -114.9  max -44.2
+
+match/miss during the run: 24039 / 0  -> 100.00% matched
+
+connection states seen:
+    691 x  conn=CONNECTED peer=connected ice=connected
+     25 x  conn=CONNECTING peer=-- ice=--
+      2 x  conn=FAILED peer=disconnected ice=disconnected
+      1 x  conn=FAILED peer=failed ice=disconnected
+
+gaps longer than 30 s: 0
