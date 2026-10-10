@@ -106,15 +106,7 @@ class WebRTCSender:
             !
             jpegdec
             !
-            videoconvert
-            !
-            video/x-raw,format=BGR
-            !
             identity name=timestamp_probe
-            !
-            videoconvert
-            !
-            video/x-raw,format=I420
             !
             x264enc
                 tune=zerolatency
