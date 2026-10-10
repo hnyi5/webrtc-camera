@@ -1177,3 +1177,109 @@ python tools/analyze_long_test.py measurements/soak.jsonl
 
 原始数据：`measurements/2026-10-09-soak-60min.jsonl`
 分析输出：`measurements/2026-10-09-soak-60min.txt`
+
+---
+
+# 31. 2026-10-10 逐级实测：每一级到底花多少毫秒
+
+## 31.1 方法
+
+`tools/stage_timing.py` 在链路每一级挂 pad probe，记录 `time.monotonic_ns()`，
+并**按 buffer PTS 配对同一帧**（PTS 在 `x264enc` 之前是保留的，是精确的帧身份）。
+全部在虚拟机内完成，**不涉及任何跨机器时钟**，所以得到的是纯粹的本机耗时。
+
+## 31.2 实测结果（满载，与真实 sender 同管线）
+
+| 环节 | 耗时 (P50) |
+|---|---|
+| ⑤ `jpegdec` | 7.72 ms |
+| ⑥ `videoconvert` → BGR | 0.04 ms |
+| **⑧ BGR → I420** | **8.33 ms** |
+| ⑨ `x264enc` | 6.43 ms |
+| ⑩ `h264parse` + `rtph264pay` | 0.11 ms |
+| **合计（v4l2src → RTP 队列）** | **22.67 ms** |
+
+空载对照（`v4l2src ! jpegdec ! fakesink`）：`jpegdec` 只要 **5.67 ms**。
+所以此前「JPEG 解码 10–25 ms」的估算是偏高的，实测便宜得多。
+
+## 31.3 一个测量方法的更正（重要）
+
+最初用一个公式测「V4L2 队列等待」：
+
+```text
+running_now - buffer.pts
+    running_now = clock.get_time() - pipeline.get_base_time()
+```
+
+**这个测量是无效的。** 对照实验：把 `do-timestamp` 从 `false` 改成 `true`
+（PTS 被覆盖成出队时刻），结果几乎完全不变（P50 12.34 → 12.32 ms）。
+如果它真是驱动时间戳与出队之间的间隔，覆盖后就应该是 0。
+所以那约 12 ms 来自 GStreamer 自己的 base_time / 延迟约定，
+**不是驱动队列等待**。
+
+有意义的只是**尾部随负载增长**：空载 max 22.85 ms → 满载 max 224.54 ms，
+说明负载下确实存在真实的排队尖峰。
+
+另一个教训：**按缓冲区序号配对，在元素内部有缓存时会错位**。
+满载时 `v4l2src out` 有 229 个、`jpegdec out` 有 228 个，
+差 1 个就是 33 ms 误差。改用 PTS 配对后结果才稳定。
+
+## 31.4 发现并修掉：BGR 往返白花 8.8 ms
+
+原管线：
+
+```text
+jpegdec ! videoconvert ! video/x-raw,format=BGR ! identity
+         ! videoconvert ! video/x-raw,format=I420 ! x264enc
+         └─ I420→BGR（一次全屏色彩转换）        └─ BGR→I420（又转回去）
+```
+
+**`jpegdec` 输出本来就是 I420，`x264enc` 要的也是 I420**，中间却转成 BGR 再转回来。
+
+**为什么会有 BGR？** 叠加层时代的遗留：最早的管线用 `textoverlay` 在画面上画
+时间戳，并配 Python pad probe + OpenCV，而 **OpenCV 需要 BGR**。
+现在探针只读 `buffer.pts` 和墙钟，**对像素格式没有任何要求**。
+
+修复后的实测对比：
+
+| 环节 | 有 BGR | 无 BGR |
+|---|---|---|
+| `jpegdec` | 7.72 | 5.93 ms |
+| `videoconvert`→BGR | 0.04 | — |
+| **BGR→I420** | **8.33** | **—** |
+| `identity`→`x264enc` | 6.43 | 5.95 ms |
+| `x264enc`→`rtph264pay` | 0.11 | 0.12 ms |
+| **探针 → RTP 队列** | **14.89** | **6.09 ms** |
+| **v4l2src → RTP 队列** | **22.67** | **12.07 ms** |
+
+系统级验证（4 分钟采样，与 60 分钟基线对比）：
+
+| 指标 | 基线（有 BGR） | 去掉 BGR |
+|---|---|---|
+| **Source → Receive (P50)** | **18.7 ms** | **11.7 ms** ← **−7.0 ms** |
+| Source → Callback (P50) | 46.0 ms | 44.4 ms |
+| Source → Callback (P99) | 63.9 ms | 53.6 ms |
+| Receive → Callback (P50) | 26.6 ms | 32.1 ms（浏览器侧，本轮偏高） |
+| Match / Miss | 24039 / 0 | 7058 / 0 |
+
+**sender 侧如期缩短 7.0 ms**；总额变化不大，是因为浏览器侧那一轮偏高
+（26.6 → 32.1 ms），而它本身的波动就大。
+
+## 31.5 仍然测不到的部分
+
+`v4l2src` 之前的一切（①曝光 ②摄像头内编码 ③USB 传输 ④驱动缓冲）
+**在原理上测不到**：软件的第一个观测点在数据**已经到达之后**，
+摄像头内部的时刻不存在于虚拟机的任何数据里。
+
+- ④ 曾试图用 buffer 时间戳间接测，**已证伪**（见 §31.3）
+- ①–③ 的总和只能用「差值法」界定：手机拍照约 150 ms − 本代码实测约 45 ms
+  → 约 100 ms，误差 ±10–20 ms
+- 要真正测 ③，需要 USB 抓包（`usbmon` / USBPcap）；①② 需要硬件触发
+
+## 31.6 下一步的可操作项
+
+1. ✅ BGR 往返已去掉（本次）
+2. 空载 vs 满载的 `jpegdec` 差异（5.67 → 7.72 ms）说明有轻微排队；
+   进一步降低 CPU 占用（原生 H.264）应能让尾部尖峰（max 224 ms）收敛
+3. 浏览器侧 `Receive → Callback` 26–32 ms 是当前测量区段里最大的一块，
+   且波动最大 —— 页面上 3 个 `backdrop-filter: blur(4px)` 角标是待验证的嫌疑
