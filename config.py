@@ -84,7 +84,15 @@ SPEED_PRESET = _str("DSH_SPEED_PRESET", "ultrafast")
 # Measured on the current deployment network: endpoint-independent mapping
 # (cone NAT), so STUN alone is enough and TURN is empty.  See
 # tools/stun_probe.py and docs/TECHNICAL_NOTES.md section 32.
-STUN_URL = _str("DSH_STUN_URL", "stun:stun.l.google.com:19302")
+# Comma-separated, so several servers can be listed for redundancy.  That
+# matters on this network: stun.l.google.com intermittently fails DNS lookup
+# (seen as STUN error 701 in the browser test), while stun.miwifi.com and
+# stun.cloudflare.com answered reliably.  A single unreachable STUN server
+# means no srflx candidate at all, which breaks the public-internet case.
+STUN_URL = _str(
+    "DSH_STUN_URL",
+    "stun:stun.l.google.com:19302,stun:stun.miwifi.com:3478",
+)
 TURN_URL = _str("DSH_TURN_URL", "")
 TURN_USERNAME = _str("DSH_TURN_USERNAME", "")
 TURN_PASSWORD = _str("DSH_TURN_PASSWORD", "")
@@ -123,8 +131,9 @@ def ice_servers():
     """ICE server list in the shape RTCPeerConnection expects."""
     servers = []
 
-    if STUN_URL:
-        servers.append({"urls": STUN_URL})
+    for url in (piece.strip() for piece in STUN_URL.split(",")):
+        if url:
+            servers.append({"urls": url})
 
     if TURN_URL:
         entry = {"urls": TURN_URL}

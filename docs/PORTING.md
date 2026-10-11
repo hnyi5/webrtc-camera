@@ -35,7 +35,7 @@
 | 信令绑定 | `DSH_SIGNALING_HOST` / `_PORT` | `0.0.0.0` / `8765` | 信令服务器监听 |
 | 码率 | `DSH_BITRATE_KBPS` | `4000` | |
 | 编码预设 | `DSH_SPEED_PRESET` | `ultrafast` | |
-| STUN | `DSH_STUN_URL` | `stun:stun.l.google.com:19302` | 写进 `config.js` |
+| STUN | `DSH_STUN_URL` | `stun:stun.l.google.com:19302,stun:stun.miwifi.com:3478` | **逗号分隔可写多台**；写进 `config.js` |
 | TURN | `DSH_TURN_URL` / `_USERNAME` / `_PASSWORD` | 空 | 只在被 CGNAT 挡住时需要 |
 | 页面端口 | `DSH_PAGE_PORT` | `8000` | 工具约定 |
 | CDP 调试地址 | `DSH_CDP_HTTP` | `http://127.0.0.1:9222` | 自动化工具用 |
