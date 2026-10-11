@@ -1306,7 +1306,21 @@ const clockSamples = [];
  * because a busy main thread legitimately produces round trips of tens of
  * milliseconds, and rejecting those would simply stop the measurement.
  */
-const CLOCK_RTT_MAX_MS = 250;
+/*
+ * The largest round trip a sample may have and still be believed.
+ *
+ * This was 250 ms, which is a LAN number: there the round trip is 1-4 ms, so
+ * 250 is generous.  Over a tunnel it is not.  The reply is handed to the
+ * sender's GLib main thread, which is busy encoding 1080p30, and the path also
+ * runs through a tunnel -- so every sample exceeded 250 ms, every sample was
+ * rejected, the offset stayed stale, and the latency panel showed nothing at
+ * all.  That is the opposite of a measurement.
+ *
+ * Rejecting is also the wrong instrument here.  The estimator keeps a window and
+ * picks the smallest round trip in it, so a slow sample cannot corrupt the
+ * estimate -- it just loses.  All this ceiling has to catch is the impossible.
+ */
+const CLOCK_RTT_MAX_MS = 3000;
 
 /*
  * Keep enough samples over a long enough window that a moment when the main
@@ -1376,6 +1390,13 @@ function handleClockSyncReply(message) {
     /*
      * Round trip with the sender's own processing time removed, so
      * this is the path cost only.
+     */
+    /*
+     * Path cost only: the sender's own processing time is subtracted out.
+     *
+     * Over a tunnel that processing time is not small -- the reply waits for the
+     * GLib main thread -- so leaving it in would inflate the round trip and make
+     * the offset look better than it is.
      */
     const rtt =
         (t4 - t1) -
@@ -1518,8 +1539,16 @@ function updateClockUi() {
         latencyClockOffsetElement.className =
             "stat-value good";
 
+        /*
+         * The offset is only accurate to about half the round trip: any delay
+         * that lands on one direction and not the other biases it by up to that
+         * much.  On a LAN this is a fraction of a millisecond; over a tunnel it
+         * is tens of milliseconds, and a latency figure shown without it would
+         * claim more than the method can deliver.
+         */
         latencyClockRttElement.textContent =
             clockOffsetRttMs.toFixed(2) + " ms" +
+            " (±" + (clockOffsetRttMs / 2).toFixed(1) + " ms)" +
             (clockRejectedCount > 0
                 ? ` / ${clockRejectedCount} rejected`
                 : "");
@@ -1537,6 +1566,16 @@ function updateClockUi() {
         clockRejectedCount > 0
             ? `${clockRejectedCount} rejected`
             : "--";
+
+    /*
+     * A stale offset means no latency number, and the reason is worth stating:
+     * "waiting for the first usable clock sample" and "the samples are all being
+     * refused" look identical otherwise.
+     */
+    latencyMetadataElement.textContent =
+        clockRejectedCount > 0
+            ? `clock sync rejected ${clockRejectedCount} sample(s)`
+            : "waiting for a clock sample";
 }
 
 /* Re-estimate once a second; the offset can drift or step. */
