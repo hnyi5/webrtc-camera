@@ -57,6 +57,28 @@ def log(message):
     print("[GUARD] " + message, flush=True)
 
 
+def budget_from_env(name, default):
+    """Read the daily budget, falling back instead of dying.
+
+    float() on a malformed value raises while argparse is still being built, so
+    the process exits before the first measurement -- and systemd restarts it
+    every ten seconds, showing "activating" forever, while nothing is actually
+    guarded.  A safety device must not fail this way, and it is inconsistent
+    with config.py, which already degrades gracefully for the integer settings.
+    """
+    raw = os.environ.get(name)
+
+    if raw is None or raw == "":
+        return float(default)
+
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        log("{0}={1!r} is not a number; falling back to {2} GB".format(
+            name, raw, default))
+        return float(default)
+
+
 def default_interface():
     """Name of the interface carrying the IPv4 default route.
 
@@ -244,7 +266,7 @@ def main():
     parser.add_argument(
         "--budget-gb",
         type=float,
-        default=float(os.environ.get("DSH_DAILY_TX_BUDGET_GB", DEFAULT_BUDGET_GB)),
+        default=budget_from_env("DSH_DAILY_TX_BUDGET_GB", DEFAULT_BUDGET_GB),
         help="outbound budget per day, in GB (default %(default)s)",
     )
     parser.add_argument(

@@ -1582,8 +1582,18 @@ credential = base64(HMAC-SHA1(static-auth-secret, username))
 [ok]  a later mint gets a different username
 ```
 
-**当前状态**：服务器侧已安全（没有凭据就用不了中继），但**发放端点还没接** ——
-所以 TURN 暂时还不能实际使用。**P2P 不受影响，已经完全可用。**
+**发放链路**：信令服务器为每个连接铸一份，作为**第一条消息**发出，而且是在把
+socket 加入 `clients` **之前** —— 浏览器在 socket 打开前就创建了
+RTCPeerConnection，offer 若先到，answer 里就不会有任何 relay 候选，
+中继会静默地永远不被使用。
+
+两端都已接好并实测：
+
+```text
+页面   pc.getConfiguration().iceServers 里出现带 credential/username 的 TURN 条目
+发送端 [WebRTC] TURN credentials received / TURN server(s) added: 1
+链路   match/miss = 599/0 = 100%，ICE path = host -> prflx P2P
+```
 
 ## 34.4 服务器加固（`deploy/turnserver.conf.template`）
 
@@ -1788,3 +1798,148 @@ config.py                            唯一配置真值源
 
 已经把这个场景写进 `WORKFLOW.md` 的 §0.1：**虚拟机停机时怎么安全地干活**，
 包括正确的同步方式（`git pull --ff-only`，失败时先看清未跟踪文件是什么）。
+
+---
+
+# 37. 2026-10-11 独立代码审查与修复
+
+## 37.1 为什么要做
+
+短时间内往代码里加了很多东西（配置层、安全层、流量守卫、TURN 凭据发放），
+**自己审自己一定会漏**。所以让一个独立的 agent 用怀疑的眼光过一遍"当前在用的"
+文件，要求它给出 `文件:行号` 级别、可核实的发现，并明确区分"确认过"与"猜测"。
+
+**结果证明这件事是必要的** —— 它找到的三个 HIGH 全是我自己写的、而且都没意识到。
+
+## 37.2 三个 HIGH（已修复）
+
+### H1. `<video autoplay>` 没有 `muted`，也没有 `play()` 兜底
+
+**这是最危险的一个，因为它暴露的是一个测试盲区，而不是一个代码错误。**
+
+所有测量会话都用 `--autoplay-policy=no-user-gesture-required` 启动 Chrome，
+所以"普通浏览器会不会拒绝播放"**从来没有被验证过**。
+
+如果被拒绝：面板显示 `peer=connected ice=connected`、FPS 停在初值、
+延迟停在 `--`，**没有任何一行提示"自动播放被拒绝"**。
+
+**修复**：加 `muted`（本来就没有音轨）+ 在 `ontrack` 里显式 `play()`，
+把失败写进日志与面板。
+
+**验证** —— 用**不带那个 flag** 的 Chrome 打开：
+
+```text
+{"paused": false, "readyState": 4, "muted": true,
+ "currentTime": 16.89, "videoWidth": 1920}
+```
+
+画面正常播放，`match/miss = 453/0 = 100%`。
+
+### H2. offer 分支没有 try/catch，也没有重复 offer 守卫
+
+`ws.onmessage` 是 async，await 抛出会变成 **unhandled rejection** ——
+socket 还在、页面还在跑，**没有任何东西会重载它**。
+
+而 `scheduleReload` 只有两个触发点：`connectionState === "failed"` 与
+`ws.onclose`。如果 `connectionState` 停在 `new`（**首次 offer 失败就是这个状态**），
+两个都不触发 → **永久黑屏**。
+
+**这个错误在本项目里真的出现过**："The order of m-lines in subsequent offer..."
+—— 当时能恢复只是因为 `connectionState` 恰好走到了 failed。**它不总是会。**
+
+**修复**：① 重复 offer 守卫，直接重载；② `setRemoteDescription` /
+`createAnswer` / `setLocalDescription` 全部包 try/catch，失败即 `scheduleReload`；
+③ 发 answer 前检查 socket 状态。
+
+### H3. 时钟估计在 step 之后会 1 Hz 震荡
+
+step 确认时更新了 `clockOffsetMs`，但 **15 秒窗口里 step 之前的旧样本还在**。
+
+```text
+step 确认      -> clockOffsetMs = 新值
+下一条回复      -> 最新 3 条已与当前估计一致 -> 不满足 step 条件
+                -> 落到 min-RTT 分支 -> 可能挑中 step 前的旧样本
+                -> clockOffsetMs 退回旧值
+再下一条回复    -> 又满足 step 条件 -> 跳回新值
+```
+
+**每次对一半的帧用错偏移，而且什么都不记录。** §30 报的 "-19.6 ppm 漂移" 里
+可能就混着这个。
+
+**修复**：step 确认后把窗口裁剪到只保留最新 3 条（一行）。
+
+## 37.3 四个 MEDIUM（也已修复）
+
+| # | 问题 | 修复 |
+|---|---|---|
+| **M4** | TURN 处理什么都没应用也打印 "applied"；`setConfiguration` 未捕获 | 按实际结果分别记录；包 try/catch |
+| **M5** | 面板的 `Clock sync RTT` 不是所用偏移那条样本的 RTT | 各分支记录自己那条样本的 rtt |
+| **M6** | **流量守卫遇到非法预算会崩掉、不再守卫** | 新增 `budget_from_env`：非法值打日志并回落默认 |
+| **M8** | 文档说 TURN 发放端点"还没接"，其实已经接好了 | 更新 `deploy/README.md` 与 §34.3 |
+
+**M6 是最坏的失败模式**：`float("5GB")` 在 argparse 构造时抛异常 → 进程退出 →
+systemd 每 10 秒重启 → **守卫永远不真正运行，而 systemd 显示它在 restarting**。
+
+**一个安全装置以这种方式失效，比没有安全装置更危险** —— 因为它会被信任。
+
+实测：
+
+```text
+[GUARD] DSH_DAILY_TX_BUDGET_GB='5GB' is not a number; falling back to 5.0 GB
+[GUARD] new day ... starting the counter at tx=4321622291     <- 继续运行
+```
+
+## 37.4 L3 不是理论问题 —— 它当场复现了
+
+审查预测：`send()` 只注册了 resolve，CDP 中途断线会让 await 永不结束，
+**整场 soak 静默停止采样**。
+
+**就在审查进行期间，一次 20 分钟 soak 正好撞上了它** —— 我为另一个测试重启了
+Chrome，harness 随即打印：
+
+```text
+Warning: Detected unsettled top-level await at long_test.mjs:173
+  const panel = await takeSample();
+```
+
+**"静默停止"对测量工具是最坏的失效方式：它看起来就像运行正常结束了。**
+
+**修复**：
+
+1. `send()` 加 30 秒超时，超时 reject
+2. `stream.end()` 的回调里才 `process.exit`，并加 5 秒兜底（原来直接
+   `end(); exit(0)`，缓冲区里的尾部记录会被丢掉）
+3. 采样增加 `decodedFps`（分析器一直在列这个指标，但因为 harness 没采，
+   **整行被静默跳过**，报告看起来仍然完整）
+4. 采样增加 `hidden`（后台标签页会节流定时器、停止 rVFC，采样器会一直记录
+   最后一个值 —— **数据里"标签页被隐藏"和"延迟很稳"完全无法区分**）
+
+**验证**：杀掉 Chrome 再跑一次，20 秒正常结束（`samples=10`），不再挂死。
+
+## 37.5 审查确认"看起来可疑但其实正确"的地方
+
+这部分同样有价值 —— 它把几个我本来就该确认的推理独立验证了：
+
+| 位置 | 结论 |
+|---|---|
+| FIFO 配对 + 每帧重锚 `pts_offset` | **正确**。按丢帧场景推演：循环结束时 `source_frames[0]` 恰是时间上最接近的正确源帧，上游丢帧被吃掉并计入 `skipped`，不会整体错位一帧 |
+| `send_turn_credentials` 先于 `clients.add` | **构成结构性保证**：服务器不可能把转发消息发给还不在 `clients` 里的连接，所以凭据必然先于 offer 到达 |
+| `if (answer) ... elif (candidate)` | **语义正确**（前面的分支都 return 了）—— 但很脆：将来在两者之间插分支就会破坏它 |
+| `pendingCandidates` 的清空竞态 | **不是 bug**：`remoteDescriptionSet = true` 早于 drain 循环，drain 期间新到的候选走另一条分支 |
+| `run_sender_loop.sh` 里的 `$?` | **正确**：`echo` 的展开发生在 `python3` 之后，取到的是 python 的退出码 |
+
+## 37.6 尚未处理
+
+| # | 项 | 说明 |
+|---|---|---|
+| M1 | `[MAP] rate=100%` 是**存活检查**，不是正确性检查 | `pts_offset` 每帧重锚，所以一次错配会自我一致地固化、仍然报 100%。**面板和文档不该把它当作可信度指标** —— 真正支撑可信度的是 §31.5 的光学交叉验证 |
+| M2 | `rtp_mapping_queue` 无上界 | 正常永不积压，但 GLib 主循环被阻塞时会无界增长（历史上发生过） |
+| M3 | `remote_answer_set` 在 SDP 校验前就置位 | 持续性的坏 answer 会导致每 2 秒重启一次的活锁，而且日志看起来像"正常恢复" |
+| L4 | 分析器把 clock step 与真实漂移混报成 "ppm" | §30 的 -19.6 ppm 可能含 step |
+| L5/L6 | `setup-server.sh` 声称幂等但那一段是追加；且 unit 起不来也照常打印 "deployed" | 部署前该修 |
+| L7 | `tools/pts_diag.py` 仍在搭已被删除的 BGR 往返 | 用它诊断当前管线量的是另一条管线 |
+| L9 | 硬编码 `sdpMid: "video0"` | 名字由 webrtcbin 决定 |
+| L10 | `serve_page.py` 的 docstring 说这里会放 TURN 端点 | 实际在 `signaling_server.py` |
+| L11 | ICE 级 `failed`/`disconnected` 只改颜色、不触发恢复 | 健壮性缺口 |
+| L12 | `getStats` 出错只进 console | 持续失败看起来像"健康但不动" |
+| L13 | `receiveToCallback` 无符号守卫 | Chromium 的 `receiveTime` 偶尔超前 `now`，会显示负值（**本项目见过**） |

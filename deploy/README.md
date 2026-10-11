@@ -294,12 +294,34 @@ tail -f /var/log/turnserver.log
 
 ## 9. 还差一步（下一步的工作）
 
-**短时 TURN 凭据的发放端点还没接。** 现在的状态是：
+**短时 TURN 凭据的发放已经接好了。** 链路是：
 
-- ✅ **服务器侧已经安全** —— coturn 要求 `use-auth-secret`，没有凭据就用不了中继
-- ⏳ 浏览器/发送端**还拿不到**凭据，所以 TURN 暂时还不能实际使用
+```text
+信令服务器收到连接
+    ↓ config.turn_credentials() 铸一份短时凭据（HMAC-SHA1，带过期时间）
+    ↓ 作为【第一条消息】发出，而且在把 socket 加入 clients 之前
+两端各自处理
+    ├─ 浏览器   pc.setConfiguration() 追加 TURN 条目
+    └─ 发送端   在 create-offer 之前 add-turn-server 到 webrtcbin
+```
 
-**下一步**：在页面服务器上加一个 `/turn-credentials?token=...` 端点
-（`config.turn_credentials()` 已经写好并测试过），让客户端用它换取短时凭据。
+**为什么必须是"入队之前"**：浏览器在 socket 打开**之前**就创建了
+RTCPeerConnection。如果 offer 先到，answer 里就不会有任何 relay 候选 ——
+中继会静默地永远不被使用，而这看起来完全像网络问题。
 
-**在那之前，P2P 已经完全可用** —— 它不需要任何凭据。
+**密钥永不离开服务器**，只有派生的、会过期的凭据发出去。
+
+**实测**（真摄像头 + 真 token）：
+
+```text
+页面 pc.getConfiguration().iceServers 里出现
+     {credential: "...", username: "<过期时间戳>",
+      urls: ["turn:<ip>:3478?transport=udp"]}
+发送端日志
+     [WebRTC] TURN credentials received: [...] ttl 3600
+     [WebRTC] TURN server(s) added: 1
+```
+
+**验证 TURN 是否真的可用**：在 trickle-ice 页面把 IceTransports 从 `all`
+改成 `relay`，看能不能拿到 relay 候选；或者直接连一次，看面板的 `ICE path`
+显示 `relay` 还是 `P2P`。
