@@ -879,6 +879,7 @@ function buildSignalingUrl() {
             + location.hostname
             + ":" + DSH_SIGNALING_PORT
             + "/?token=" + encodeURIComponent(DSH_TOKEN)
+            + "&role=viewer"
         );
     }
 
@@ -898,6 +899,7 @@ function buildSignalingUrl() {
         base
         + (base.includes("?") ? "&" : "?")
         + "token=" + encodeURIComponent(DSH_TOKEN)
+        + "&role=viewer"
     );
 }
 

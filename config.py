@@ -282,15 +282,27 @@ def turn_server_uris(credentials):
     return uris
 
 
-def signaling_url_with_token(url=None):
-    """The signalling URL with the access token appended, when one is set."""
-    url = url or SIGNALING_URL
+def signaling_url_with_token(url=None, role=None):
+    """The signalling URL with the token, and optionally a role, appended.
 
-    if not ACCESS_TOKEN:
+    The role matters: the server relays a viewer's messages to the sender and
+    the sender's messages to the newest viewer only, so that a second browser
+    -- or a page that just reloaded -- cannot be handed an offer it will answer.
+    """
+    url = url or SIGNALING_URL
+    query = []
+
+    if ACCESS_TOKEN:
+        query.append("token=" + quote(ACCESS_TOKEN, safe=""))
+
+    if role:
+        query.append("role=" + quote(role, safe=""))
+
+    if not query:
         return url
 
     separator = "&" if "?" in url else "?"
-    return f"{url}{separator}token={quote(ACCESS_TOKEN, safe='')}"
+    return f"{url}{separator}" + "&".join(query)
 
 
 def turn_credentials(ttl_seconds=None, now=None):
