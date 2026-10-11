@@ -436,7 +436,15 @@ chronyc sourcestats -v
 
 # 17. 当前重要文件
 
-项目目录：
+> ⚠️ **这一节是当时的快照，已经过时。** 它列出的 `index.html`、
+> `webrtc_sender_rtp_latency.py`、`index_latency_rtp_fixed.html` 现在都不存在。
+>
+> **当前的目录布局和入口见 §36**，或者直接看 `run_sender_loop.sh` 与
+> `tools/restart_stack.sh` 实际调用了谁。
+>
+> 保留这一节是为了能看清演进过程 —— 但不要拿它当"现在有什么"的参考。
+
+项目目录（**当时的**布局）：
 
 ```text
 ~/webrtc-camera/
@@ -1723,3 +1731,60 @@ max-bps=750000 (约 6 Mbps) x total-quota=12  =  约 72 Mbps
 - [ ] 部署后跑一次 `traffic_guard.py --status` 确认计数正常
 - [ ] **把安全组页面加书签**（真正的紧急按钮）
 - [ ] 费用告警仍然要设（它是第 3 层的触发器，不是止损手段）
+
+---
+
+# 36. 2026-10-11 目录整理与代码总检
+
+## 36.1 整理前的问题
+
+根目录同时放着**当前在用的代码**和**十一个早期版本**，还有两个根本不是代码的文件：
+
+| 文件 | 问题 |
+|---|---|
+| `cv.txt` | 一段 23 行的管线片段，**而且是错的**（没有时间戳探针，还是 BGR 往返之前的样子）。放在根目录里，是能被误抄的东西 |
+| `t-inspect-1.0 timeoverlay` | `gst-inspect-1.0` 的输出被重定向到一个名字被截断的文件（185 行 ANSI 转义） |
+
+**它们能被误用，就是它们待在根目录的代价。**
+
+## 36.2 现在的布局
+
+```text
+根目录 / tools/ / deploy/     当前在用的代码
+attic/                        早期版本与实验脚本（保留供追溯）
+docs/                         技术文档、移植指南、代码管理规范
+measurements/                 长测原始数据与分析输出
+```
+
+**当前的入口：**
+
+```text
+run_sender_loop.sh                   监管循环 + 断线重启
+webrtc_sender_Now_latency_probe.py   发送端
+index_latency.html                   浏览器页面（接收 + 测量 + 面板）
+signaling_server.py                  信令（令牌鉴权 + 短时 TURN 凭据发放）
+serve_page.py                        只服务页面和 config.js
+config.py                            唯一配置真值源
+```
+
+## 36.3 总检结果
+
+| 检查 | 结果 |
+|---|---|
+| Python 编译（14 个文件） | ✅ 全过 |
+| shell 语法（4 个脚本） | ✅ 全过 |
+| 页面内联 JS 解析（node --check） | ✅ 过 |
+| `git grep` 找密钥 | ✅ 只命中测试假值 `TEST_SECRET = "testsecret"` |
+| 硬编码部署值 | ✅ 只出现在 `config.py` 的默认值里 |
+| TODO / FIXME / XXX | ✅ 无 |
+| 当前代码是否引用被移动的文件 | ✅ 无 |
+
+## 36.4 这次整理暴露出的一个规范问题
+
+`docs/WORKFLOW.md` 第 1 节第 4 条明确禁止 `git reset --hard`，
+但**在虚拟机停机期间，为了修一次失败的 `pull`，这个操作在 Windows 浏览副本上
+被用过一次**。那次恰好无害（副本上没有未提交的工作），但"恰好无害"不是规则成立
+的理由 —— 规则存在的意思就是不需要靠运气。
+
+已经把这个场景写进 `WORKFLOW.md` 的 §0.1：**虚拟机停机时怎么安全地干活**，
+包括正确的同步方式（`git pull --ff-only`，失败时先看清未跟踪文件是什么）。
