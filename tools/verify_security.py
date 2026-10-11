@@ -95,6 +95,10 @@ check("no query string (webrtcbin does not document one)",
 check("webrtcbin gets no secret of ours",
       TEST_SECRET not in " ".join(uris))
 
+stun_uri = config.stun_server_uri()
+check("webrtcbin gets the first stun: entry, reshaped",
+      stun_uri == "stun://stun.l.google.com:19302", str(stun_uri))
+
 url = config.signaling_url_with_token()
 check("token appended to the signalling URL", "token=" in url, url)
 carried = url.split("token=", 1)[1]

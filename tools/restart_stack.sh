@@ -34,19 +34,47 @@ log() { printf '%s\n' "$*"; }
 
 self=$$
 
+is_ancestor() {
+    # Walk up the parent chain from this script.  Anything found there is part
+    # of the session that invoked us -- an ssh shell, a terminal, a CI job --
+    # and must never be killed, whatever its command line happens to contain.
+    local target="$1"
+    local pid=$$
+
+    while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
+        [ "$pid" = "$target" ] && return 0
+        pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    done
+
+    return 1
+}
+
 log "stopping existing processes"
 
-# The python children need killing in their own right: killing the supervising
-# shell does not take them with it, and a surviving child keeps the port, so the
-# replacement silently fails to bind while the port check still reports success.
+# Two things matter here:
+#
+#   * the python children need killing in their own right -- killing the
+#     supervising shell does not take them with it, and a surviving child keeps
+#     the port, so the replacement silently fails to bind while the port check
+#     still reports success;
+#   * the patterns are anchored to the whole command line, so a shell that
+#     merely mentions a name (an ssh command that also greps the sender's log)
+#     is not mistaken for the process.
 for pattern in \
-    "run_sender_loop.sh signaling_server.py" \
-    "signaling_server.py" \
-    "run_sender_loop.sh$" \
-    "webrtc_sender_Now_latency_probe.py"
+    "^/bin/bash \./run_sender_loop\.sh signaling_server\.py$" \
+    "^python3 -u signaling_server\.py$" \
+    "^/bin/bash \./run_sender_loop\.sh$" \
+    "^python3 -u webrtc_sender_Now_latency_probe\.py$"
 do
     for pid in $(pgrep -f "$pattern" 2>/dev/null || true); do
         [ "$pid" = "$self" ] && continue
+
+        if is_ancestor "$pid"; then
+            log "  skipping $pid -- it is part of the session that started this"
+            continue
+        fi
+
+        log "  stopping $pid ($(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null))"
         kill "$pid" 2>/dev/null || true
     done
 done
