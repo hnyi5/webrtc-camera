@@ -176,7 +176,86 @@ relay -> host  TURN/udp   ← 打洞失败，媒体经服务器中继
 
 ---
 
-## 6. 运维与排错
+## 6. 流量失控时怎么截断 ⚠️
+
+**费用告警只能提醒，不能止损。** 按流量计费没有金额上限，所以"我注意到再处理"
+不是一个控制手段 —— 等你注意到的时候，钱已经在花了。
+
+**四层，从最快开始：**
+
+| 层 | 手段 | 生效 | 需要什么 |
+|---|---|---|---|
+| **0** | **控制台：带宽峰值降到 1 Mbps** | **立即** | **手机就行** |
+| **0** | **控制台：删掉安全组里的 TURN 规则** | **立即** | **手机就行** |
+| **0** | **控制台：停止实例** | **立即** | **手机就行** |
+| 1 | `sudo bash deploy/kill-switch.sh relay` | 秒级 | 终端 |
+| 2 | `sudo bash deploy/kill-switch.sh inbound` | 秒级 | 终端 |
+| 3 | **`dsh-traffic-guard` 自动执行** | 秒级 | 已安装 |
+
+> **第 0 层才是真正的紧急按钮** —— 它不需要 SSH，不需要在电脑前。
+> **推荐：把「安全组」页面加入浏览器书签**，出事时第一个打开它。
+
+### 6.1 自动的那一层：dsh-traffic-guard
+
+`deploy/traffic_guard.py` 盯着**默认路由网卡的出方向字节数**，超过每日预算就
+**自动停掉 coturn**。
+
+```bash
+python3 deploy/traffic_guard.py --status     # 今天用了多少、值多少钱
+python3 deploy/traffic_guard.py --once       # 检查一次就退出
+```
+
+预算默认 **5 GB/天（约 ¥4）**，用 `DSH_DAILY_TX_BUDGET_GB` 调整。
+
+**它停的是 coturn，不是服务器** —— 因为只有中继会跑出 GB 级流量，而停掉中继
+**不影响 P2P**。
+
+> **失去中继是可恢复的，跑飞的账单不是。**
+
+**为什么用网卡计数而不是 coturn 自己的统计**：它也会把信令、SSH、apt 算进去，
+但那些是 KB～MB 级，而**中继是唯一能跑 GB 的东西**。预算设在正常用量的几十倍
+以上，所以它是"跑飞探测器"，不是计量表。
+
+### 6.2 手动的那几层
+
+```bash
+sudo bash deploy/kill-switch.sh status     # 服务状态 + 今日用量 + 被拒绝次数
+sudo bash deploy/kill-switch.sh relay      # 只停中继（通常就够了）
+sudo bash deploy/kill-switch.sh inbound    # 再掐掉入站端口（iptables）
+sudo bash deploy/kill-switch.sh restore    # 撤销 iptables 规则
+```
+
+`inbound` 加的 iptables 规则**重启后失效**，它是紧急按钮而不是配置 ——
+真正的修复要去安全组里做。
+
+### 6.3 停掉之后要查什么
+
+```bash
+# 1. 今天到底用了多少
+python3 deploy/traffic_guard.py --status
+
+# 2. 中继会话记录（谁在用、用了多少）
+sudo tail -150 /var/log/turnserver.log
+
+# 3. 信令有没有被大量拒绝（有人在试探 token？）
+sudo journalctl -u dsh-signaling --since "2 hours ago" | grep -c "rejected connection"
+
+# 4. 谁在连 3478
+sudo ss -unp | grep 3478 | head
+```
+
+### 6.4 恢复
+
+```bash
+python3 deploy/traffic_guard.py --status       # 确认已经不再增长
+sudo bash deploy/kill-switch.sh restore        # 撤销 iptables（如果加过）
+sudo systemctl start coturn
+```
+
+**恢复之前必须先搞清楚原因** —— 否则就是把同一个坑再踩一遍。
+
+
+## 7. 运维与排错
 
 | 症状 | 原因 |
 |---|---|
@@ -197,7 +276,7 @@ tail -f /var/log/turnserver.log
 
 ---
 
-## 7. 安全清单（上线前逐条确认）
+## 8. 安全清单（上线前逐条确认）
 
 | # | 项 | 状态 |
 |---|---|---|
@@ -213,7 +292,7 @@ tail -f /var/log/turnserver.log
 
 ---
 
-## 8. 还差一步（下一步的工作）
+## 9. 还差一步（下一步的工作）
 
 **短时 TURN 凭据的发放端点还没接。** 现在的状态是：
 
