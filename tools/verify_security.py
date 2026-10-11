@@ -72,6 +72,29 @@ later = config.turn_credentials(now=1000003600)
 check("a later mint gets a different username",
       later["username"] != creds["username"])
 
+uris = config.turn_server_uris(creds)
+check("one TURN URI, credential inlined",
+      len(uris) == 1 and uris[0].startswith("turn://"),
+      uris[0] if uris else "none")
+
+# base64's alphabet is A-Za-z0-9+/= -- the last three are URI-special, so the
+# credential must appear escaped or the URI will be misparsed.
+escaped_credential = (
+    creds["credential"]
+    .replace("+", "%2B")
+    .replace("/", "%2F")
+    .replace("=", "%3D")
+)
+check("credential is percent-escaped inside the TURN URI",
+      all(escaped_credential in uri for uri in uris),
+      uris[0] if uris else "none")
+check("the stun: entry is not turned into a TURN URI",
+      all("stun" not in uri for uri in uris), str(uris))
+check("no query string (webrtcbin does not document one)",
+      all("?" not in uri for uri in uris), str(uris))
+check("webrtcbin gets no secret of ours",
+      TEST_SECRET not in " ".join(uris))
+
 url = config.signaling_url_with_token()
 check("token appended to the signalling URL", "token=" in url, url)
 carried = url.split("token=", 1)[1]

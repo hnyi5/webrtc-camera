@@ -1891,6 +1891,49 @@ ws.onmessage = async (event) => {
     }
 
 
+    /* ---------- TURN CREDENTIALS ---------- */
+
+    /*
+     * Time-limited TURN credentials, minted per connection by the signalling
+     * server.  The secret they are derived from never reaches the browser, and
+     * each set expires, so a copy of this page is not a copy of the relay.
+     *
+     * The server sends this before it relays anything to us, so it always
+     * arrives ahead of the offer.  That ordering is load-bearing: the peer
+     * connection is built before the socket opens, and an answer created
+     * without these would carry no relay candidates at all.
+     */
+    if (message.type === "turn-credentials") {
+
+        const servers = DSH_ICE_SERVERS.slice();
+
+        const urls = Array.isArray(message.urls)
+            ? message.urls
+            : [];
+
+        if (urls.length && message.username) {
+
+            servers.push({
+                urls: urls,
+                username: message.username,
+                credential: message.credential
+            });
+
+            pc.setConfiguration({
+                iceServers: servers
+            });
+        }
+
+        log(
+            "[WEBRTC] TURN credentials applied (" +
+            urls.length + " url(s), ttl " +
+            message.ttl + "s)"
+        );
+
+        return;
+    }
+
+
     /* ---------- OFFER ---------- */
 
     if (message.type === "offer") {

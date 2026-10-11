@@ -44,6 +44,12 @@ class WebRTCSender:
         # specific browser, and a different browser needs a fresh element.
         self.remote_answer_set = False
 
+        # Time-limited TURN credentials, pushed by the signalling server as the
+        # first message after the handshake.  Stored rather than applied on
+        # arrival, because webrtcbin may not exist yet and the value only has to
+        # be in place before the offer is created.
+        self.turn_credentials = None
+
         # ============================================================
         # Software timestamp / frame statistics
         # ============================================================
@@ -643,6 +649,26 @@ class WebRTCSender:
         )
 
         # ------------------------------------------------------------
+        # TURN credentials
+        #
+        # Time-limited, minted per connection by the signalling server; the
+        # secret behind them never leaves the server.
+        # ------------------------------------------------------------
+
+        if message_type == "turn-credentials":
+
+            self.turn_credentials = data
+
+            print(
+                "[WebRTC] TURN credentials received:",
+                data.get("urls"),
+                "ttl",
+                data.get("ttl")
+            )
+
+            return
+
+        # ------------------------------------------------------------
         # Clock synchronisation (NTP-style, initiated by the browser)
         #
         # The browser and this sender are two different machines with two
@@ -870,6 +896,32 @@ class WebRTCSender:
     # WebRTC negotiation
     # =================================================================
 
+    def apply_turn_servers(self):
+        """Give webrtcbin the minted TURN credentials.
+
+        webrtcbin keeps credentials inside the URI, so config.turn_server_uris
+        reshapes them.  The multiple-server signal is used rather than the
+        convenience property, so that a credential list containing several
+        servers does not silently degrade to one.
+
+        Safe to call with nothing to do: a LAN-only setup never receives any.
+        """
+        uris = config.turn_server_uris(self.turn_credentials)
+
+        if not uris:
+            return
+
+        for uri in uris:
+            self.webrtc.emit(
+                "add-turn-server",
+                uri
+            )
+
+        print(
+            "[WebRTC] TURN server(s) added:",
+            len(uris)
+        )
+
     def on_negotiation_needed(
         self,
         element
@@ -878,6 +930,11 @@ class WebRTCSender:
         print(
             "[WebRTC] Negotiation needed"
         )
+
+        # The last moment that still matters: the ICE agent reads the TURN
+        # configuration when the offer is built, so anything set after this
+        # changes nothing for this negotiation.
+        self.apply_turn_servers()
 
         promise = Gst.Promise.new_with_change_func(
             self.on_offer_created,

@@ -47,7 +47,30 @@ async def process_request(connection, request):
     return connection.respond(http.HTTPStatus.UNAUTHORIZED, "unauthorized\n")
 
 
+async def send_turn_credentials(websocket):
+    """Hand a client its own time-limited TURN credentials.
+
+    Sent BEFORE the socket joins `clients`, so it is structurally impossible for
+    a relayed offer to arrive first.  That matters: the browser creates its peer
+    connection before the socket opens, so an offer that got there first would
+    produce an answer with no relay candidates, and the relay would then never
+    be used -- silently.
+
+    The secret behind these values never leaves the server.
+    """
+    credentials = config.turn_credentials()
+
+    if credentials is None:
+        return
+
+    await websocket.send(
+        json.dumps({"type": "turn-credentials", **credentials})
+    )
+
+
 async def handler(websocket):
+    await send_turn_credentials(websocket)
+
     clients.add(websocket)
 
     print("[SIGNALING] Client connected")
@@ -76,6 +99,15 @@ async def main():
         "[SIGNALING] WebSocket server starting on "
         f"{config.SIGNALING_HOST}:{config.SIGNALING_PORT}"
     )
+
+    credentials = config.turn_credentials()
+    if credentials is None:
+        print("[SIGNALING] no TURN credentials to issue (TURN not configured)")
+    else:
+        print(
+            "[SIGNALING] issuing time-limited TURN credentials, ttl "
+            f"{credentials['ttl']}s, {len(credentials['urls'])} url(s)"
+        )
 
     if config.ACCESS_TOKEN:
         print("[SIGNALING] access token required (?token=...)")

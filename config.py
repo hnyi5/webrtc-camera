@@ -30,7 +30,7 @@ Print the effective configuration with:
 """
 
 import os
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 
 def _str(name, default):
@@ -205,6 +205,40 @@ def describe():
                     )
 
     return lines
+
+
+def turn_server_uris(credentials):
+    """TURN URIs with the credentials inlined, in webrtcbin's format.
+
+    webrtcbin wants the credential inside the URI:
+
+        turn://user:password@host:port
+
+    which is a different shape from the RTCPeerConnection form the browser
+    gets, so both are derived from the same minted credentials here.
+
+    The query string is dropped on purpose: webrtcbin documents the form above
+    with no query, and a URI it refuses to parse means no relay at all -- with
+    nothing in the log to say so.
+    """
+    if not credentials:
+        return []
+
+    user = quote(credentials["username"], safe="")
+    secret = quote(credentials["credential"], safe="")
+    uris = []
+
+    for url in credentials["urls"]:
+        parts = urlsplit(url)
+
+        # stun: entries belong to the stun-server property, not this one
+        if not parts.scheme.startswith("turn"):
+            continue
+
+        host = parts.netloc or parts.path
+        uris.append(f"{parts.scheme}://{user}:{secret}@{host}")
+
+    return uris
 
 
 def signaling_url_with_token(url=None):
