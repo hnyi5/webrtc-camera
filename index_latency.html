@@ -857,12 +857,53 @@ const pc = new RTCPeerConnection({
    WebSocket signaling
 ------------------------------------------------------- */
 
+/*
+ * Where the signalling server is.
+ *
+ * By default: this page's own host and the configured port, which is right on
+ * a LAN and on a VPS that serves both from one address.
+ *
+ * With config.signalingUrl set: that URL instead.  A tunnel is why this exists
+ * -- it hands the page and the signalling socket different hostnames, and the
+ * derived address would point at nothing.
+ */
+function buildSignalingUrl() {
+
+    const explicit =
+        (DSH_CONFIG.signalingUrl || "").trim();
+
+    if (!explicit) {
+
+        return (
+            (location.protocol === "https:" ? "wss://" : "ws://")
+            + location.hostname
+            + ":" + DSH_SIGNALING_PORT
+            + "/?token=" + encodeURIComponent(DSH_TOKEN)
+        );
+    }
+
+    /*
+     * A WebSocket URL needs a path.  "wss://host" makes the client send a
+     * request target with no leading slash, which some servers reject -- and
+     * the failure looks like a refused connection rather than a malformed one.
+     */
+    let base = explicit;
+
+    if (!/^[a-z]+:\/\/[^/]+\/.+/.test(base)) {
+
+        base = base.replace(/\/?$/, "/");
+    }
+
+    return (
+        base
+        + (base.includes("?") ? "&" : "?")
+        + "token=" + encodeURIComponent(DSH_TOKEN)
+    );
+}
+
 const ws =
     new WebSocket(
-        (location.protocol === "https:" ? "wss://" : "ws://")
-        + location.hostname
-        + ":" + DSH_SIGNALING_PORT
-        + "/?token=" + encodeURIComponent(DSH_TOKEN)
+        buildSignalingUrl()
     );
 
 let remoteDescriptionSet = false;

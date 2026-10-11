@@ -43,6 +43,7 @@ window.DSH_CONFIG = """
 def render():
     payload = {
         "signalingPort": config.SIGNALING_PORT,
+        "signalingUrl": config.SIGNALING_PUBLIC_URL,
         "iceServers": config.ice_servers(),
     }
     body = json.dumps(payload, indent=4, ensure_ascii=False)
@@ -67,6 +68,10 @@ def main():
     OUTPUT.write_text(rendered, encoding="utf-8")
     print(f"OK   wrote {OUTPUT}")
     print(f"     signalling port : {config.SIGNALING_PORT}")
+    print(
+        "     signalling url  : "
+        + (config.SIGNALING_PUBLIC_URL or "(derived from the page's own host)")
+    )
     print(f"     ice servers     : {config.ice_servers()}")
     return 0
 

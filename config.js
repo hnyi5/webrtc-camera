@@ -13,6 +13,7 @@
  */
 window.DSH_CONFIG = {
     "signalingPort": 8765,
+    "signalingUrl": "",
     "iceServers": [
         {
             "urls": "stun:stun.l.google.com:19302"
