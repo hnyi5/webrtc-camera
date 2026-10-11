@@ -36,8 +36,12 @@ self=$$
 
 log "stopping existing processes"
 
+# The python children need killing in their own right: killing the supervising
+# shell does not take them with it, and a surviving child keeps the port, so the
+# replacement silently fails to bind while the port check still reports success.
 for pattern in \
     "run_sender_loop.sh signaling_server.py" \
+    "signaling_server.py" \
     "run_sender_loop.sh$" \
     "webrtc_sender_Now_latency_probe.py"
 do
@@ -49,6 +53,21 @@ done
 
 sleep 2
 
+# Wait for the port to actually come free.  Starting into a held port fails
+# quietly from the outside: the old process answers, so everything looks fine.
+for _ in $(seq 1 20); do
+    if ! ss -tln | grep -q ':8765 '; then
+        break
+    fi
+    sleep 0.5
+done
+
+if ss -tln | grep -q ':8765 '; then
+    log "!! port 8765 is STILL held after killing everything:"
+    ss -tlnp 2>/dev/null | grep ':8765 ' || true
+    log "   the signalling server below will fail to bind.  Kill the holder first."
+fi
+
 log "starting the signalling server"
 setsid nohup ./run_sender_loop.sh signaling_server.py </dev/null >/tmp/sig.log 2>&1 &
 sleep 3
@@ -56,7 +75,14 @@ sleep 3
 if ss -tln | grep -q ':8765 '; then
     # -a: a previous crashed run can leave binary bytes in the log, and grep
     # then refuses to print anything useful ("binary file matches").
-    grep -a -E 'access token required|WARNING|server ready' /tmp/sig.log | head -4
+    grep -a -E 'access token required|WARNING|server ready|issuing' /tmp/sig.log | head -5
+
+    # Listening is not the same as *our* server listening.  Compare the log's
+    # most recent start against the process that holds the port.
+    running="$(pgrep -f 'signaling_server.py' | head -1)"
+    if [ -n "$running" ]; then
+        log "  signalling pid $running, started $(ps -o lstart= -p "$running" 2>/dev/null)"
+    fi
 else
     log "  !! not listening; last lines of /tmp/sig.log:"
     tail -15 /tmp/sig.log 2>/dev/null
