@@ -346,7 +346,12 @@ if failures:
 print()
 print("No blocking problems found.  Next steps:")
 print("  1. confirm the caps in webrtc_sender_Now_latency_probe.py match this camera")
-print("  2. gst-launch-1.0 -v v4l2src device=/dev/video0 io-mode=mmap num-buffers=30")
+suggested = probe_device if probe_device else "/dev/video0"
+print(
+    "  2. gst-launch-1.0 -v v4l2src device="
+    + suggested
+    + " io-mode=mmap num-buffers=30"
+)
 print("       ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! fakesink")
 print("  3. see docs/PORTING.md section 3 for the full startup order")
 sys.exit(0)
