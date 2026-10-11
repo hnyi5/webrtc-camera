@@ -1,0 +1,33 @@
+﻿========================================================================
+file            : C:\Users\dell\Documents\deepseek-harness\default-workspace\long-test\2026-10-11-final-soak.jsonl
+window          : 2026-10-11 18:16:48.904000
+                  2026-10-11 18:36:46.240000
+duration        : 20.0 min
+samples         : 240  (read errors 0, browser exceptions 0)
+========================================================================
+metric                             n      min      P50      P95      P99      max     mean
+latency (source->callback)       238     14.0     38.3     48.4     54.2     61.6     38.5
+source->receive                  238      6.4      9.5     13.7     22.6     39.3     10.1
+receive->callback                238      3.2     28.8     37.4     45.1     49.4     28.4
+source->expected display         238     20.1     42.9     51.8     58.6     64.5     43.2
+decoded frames/s (stream)        238     27.0     30.0     31.0     31.3     32.1     30.0
+rvfc frames/s (presented)        238     26.8     29.8     30.8     30.8     31.1     30.0
+
+fps      : min 26.8  P50 29.8  P95 30.8  max 31.1
+bitrate  : min 2.94  P50 4.01  max 5.08 Mbps
+
+clock offset: first -1775.1 ms  last -1787.0 ms  drift -11.9 ms over 20 min (-35.8 ms/h)
+              min -1787.1  max -1775.1
+
+match/miss during the run: 35488 / 0  -> 100.00% matched
+
+connection states seen:
+    237 x  conn=CONNECTED peer=connected ice=connected
+      2 x  conn=CONNECTING peer=-- ice=--
+      1 x  conn=FAILED peer=connected ice=connected
+
+ICE path selected:
+    238 x  host -> prflx  P2P   (direct peer-to-peer)
+      2 x  --
+
+gaps longer than 30 s: 0
