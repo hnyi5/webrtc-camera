@@ -98,6 +98,10 @@ umask 077
     echo "DSH_SIGNALING_HOST=0.0.0.0"
     echo "DSH_SIGNALING_PORT=8765"
     echo "DSH_PAGE_PORT=8000"
+    echo ""
+    echo "# Outbound budget for deploy/traffic_guard.py, in GB per day."
+    echo "# Past this the guard stops coturn by itself.  5 GB is roughly CNY 4."
+    echo "DSH_DAILY_TX_BUDGET_GB=${DSH_DAILY_TX_BUDGET_GB:-5}"
 } >> "$ENV_FILE"
 
 log "installing services"
@@ -137,14 +141,37 @@ User=$RUN_USER
 WantedBy=multi-user.target
 EOF
 
+cat > /etc/systemd/system/dsh-traffic-guard.service <<EOF
+[Unit]
+Description=dsh-camera outbound traffic budget guard
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$REPO_ROOT
+EnvironmentFile=$ENV_FILE
+ExecStart=/usr/bin/python3 $REPO_ROOT/deploy/traffic_guard.py
+Restart=always
+RestartSec=10
+# root: it has to be able to stop coturn
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 systemctl daemon-reload
-systemctl enable dsh-signaling dsh-page >/dev/null 2>&1 || true
-systemctl restart dsh-signaling dsh-page
+systemctl enable dsh-signaling dsh-page dsh-traffic-guard >/dev/null 2>&1 || true
+systemctl restart dsh-signaling dsh-page dsh-traffic-guard
 
 sleep 3
 
 log "state"
-systemctl is-active coturn dsh-signaling dsh-page || true
+systemctl is-active coturn dsh-signaling dsh-page dsh-traffic-guard || true
+
+log "traffic guard"
+python3 "$REPO_ROOT/deploy/traffic_guard.py" --status \
+    --budget-gb "${DSH_DAILY_TX_BUDGET_GB:-5}" 2>/dev/null || true
 echo
 ss -tulnp | grep -E ':(3478|8765|8000|443)\b' || true
 
