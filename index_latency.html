@@ -390,7 +390,15 @@
         <div class="card video-card">
 
             <div class="video-wrapper">
-                <video id="video" autoplay playsinline></video>
+                <!--
+                    muted is not decoration.  Browsers only allow unattended
+                    playback for muted media, and this stream has no audio track
+                    anyway.  Every measurement session so far launched Chrome
+                    with --autoplay-policy=no-user-gesture-required, so the
+                    missing attribute was never exercised -- a normal viewer's
+                    browser does not have that flag.
+                -->
+                <video id="video" autoplay muted playsinline></video>
 
                 <div class="video-overlay">
                     <div class="overlay-badge" id="overlayResolution">
@@ -934,6 +942,30 @@ pc.ontrack = (event) => {
 
         videoState.textContent =
             "Video track received";
+
+        /*
+         * Ask for playback explicitly and report a refusal.
+         *
+         * `autoplay` + `muted` is what browsers require, but if playback is
+         * still refused the failure is invisible: the panel shows a healthy
+         * connection, the counters sit at their initial values, and nothing
+         * says why.  This is the one place where the difference between "the
+         * stream is broken" and "the browser would not start playback" can be
+         * made visible, so it is worth the four lines.
+         */
+        video.play().catch((error) => {
+
+            log(
+                "[VIDEO] play() refused: " +
+                error.name +
+                " -- click the page once to allow playback"
+            );
+
+            videoState.textContent =
+                "Playback blocked: " + error.name;
+
+            console.error("[VIDEO] play() refused:", error);
+        });
     }
 };
 
@@ -943,6 +975,16 @@ pc.ontrack = (event) => {
 ------------------------------------------------------- */
 
 pc.onicecandidate = (event) => {
+
+    /*
+     * The sender may be down and this page may be inside its reload delay, in
+     * which case the socket is already closed and send() throws -- taking the
+     * rest of the candidate batch with it.
+     */
+    if (ws.readyState !== WebSocket.OPEN) {
+
+        return;
+    }
 
     if (event.candidate) {
 
@@ -1308,6 +1350,29 @@ function handleClockSyncReply(message) {
     if (stepConfirmed) {
 
         clockOffsetMs = newestOffsets[1];
+
+        /*
+         * Report the RTT of the sample the offset actually came from.  The
+         * whole point of showing it is to say how far to trust the offset, so
+         * showing some other sample's round trip makes the indicator lie.
+         */
+        clockOffsetRttMs = newest[1].rtt;
+
+        /*
+         * Drop everything from before the step.
+         *
+         * Those samples describe the OLD clock relationship.  Leaving them in
+         * the window means the next reply sees a spread wider than
+         * CLOCK_STEP_AGREE_MS, the step is not re-confirmed, and the min-RTT
+         * branch below can pick a pre-step sample -- snapping the estimate
+         * back, then forward again on the reply after that.  A 1 Hz
+         * oscillation in which half the frames are dated with the wrong
+         * offset, and nothing is logged.
+         */
+        clockSamples.splice(
+            0,
+            clockSamples.length - newest.length
+        );
     }
     else {
 
@@ -1333,9 +1398,9 @@ function handleClockSyncReply(message) {
         }
 
         clockOffsetMs = best.offset;
+        clockOffsetRttMs = best.rtt;
     }
 
-    clockOffsetRttMs = rtt;
     clockOffsetAtMs = t4;
 
     updateClockUi();
@@ -1919,16 +1984,38 @@ ws.onmessage = async (event) => {
                 credential: message.credential
             });
 
-            pc.setConfiguration({
-                iceServers: servers
-            });
-        }
+            try {
 
-        log(
-            "[WEBRTC] TURN credentials applied (" +
-            urls.length + " url(s), ttl " +
-            message.ttl + "s)"
-        );
+                pc.setConfiguration({
+                    iceServers: servers
+                });
+
+                log(
+                    "[WEBRTC] TURN credentials applied (" +
+                    urls.length + " url(s), ttl " +
+                    message.ttl + "s)"
+                );
+            }
+            catch (error) {
+
+                /* Uncaught, this would be one more silent unhandled rejection. */
+                log(
+                    "[WEBRTC] setConfiguration refused: " +
+                    error.name
+                );
+
+                console.error("setConfiguration failed:", error);
+            }
+        }
+        else {
+
+            /* Saying "applied" when nothing was applied is worse than silence. */
+            log(
+                "[WEBRTC] TURN credentials ignored (urls=" +
+                urls.length + ", username=" +
+                (message.username ? "yes" : "no") + ")"
+            );
+        }
 
         return;
     }
@@ -1940,14 +2027,61 @@ ws.onmessage = async (event) => {
 
         hadOffer = true;
 
+        /*
+         * A second offer on the same peer connection cannot be applied: the
+         * m-line order is allowed to differ, and Chrome rejects it with
+         * "The order of m-lines in subsequent offer does not match order in
+         * the initial offer".  That error has been seen in this project.  The
+         * sender restarts and re-offers, so the right move is a fresh page, not
+         * a second setRemoteDescription on a used connection.
+         */
+        if (remoteDescriptionSet) {
+
+            log(
+                "[WEBRTC] Duplicate offer on a used connection; reloading"
+            );
+
+            scheduleReload("duplicate offer");
+
+            return;
+        }
+
         const offer = {
             type: "offer",
             sdp: message.sdp
         };
 
-        await pc.setRemoteDescription(
-            offer
-        );
+        /*
+         * Everything below runs inside try/catch on purpose.
+         *
+         * ws.onmessage is async, so a throw here becomes an unhandled
+         * rejection: the socket stays open, the page keeps running, and
+         * nothing reloads it.  scheduleReload is only otherwise reached from
+         * connectionState === "failed" and ws.onclose -- and neither fires if
+         * the connection is still sitting in "new", which is exactly the state
+         * a failed first offer leaves behind.  Without these catches the page
+         * can sit blank forever with no path back.
+         */
+        try {
+
+            await pc.setRemoteDescription(
+                offer
+            );
+
+        }
+        catch (error) {
+
+            log(
+                "[WEBRTC] setRemoteDescription failed: " +
+                error.name
+            );
+
+            console.error("setRemoteDescription failed:", error);
+
+            scheduleReload("setRemoteDescription failed");
+
+            return;
+        }
 
         remoteDescriptionSet = true;
 
@@ -1980,15 +2114,42 @@ ws.onmessage = async (event) => {
 
         /* Create answer */
 
-        const answer =
-            await pc.createAnswer();
+        let answer;
 
-        await pc.setLocalDescription(
-            answer
-        );
+        try {
+
+            answer =
+                await pc.createAnswer();
+
+            await pc.setLocalDescription(
+                answer
+            );
+        }
+        catch (error) {
+
+            log(
+                "[WEBRTC] createAnswer/setLocalDescription failed: " +
+                error.name
+            );
+
+            console.error("answer creation failed:", error);
+
+            scheduleReload("answer creation failed");
+
+            return;
+        }
 
 
         /* Send answer */
+
+        if (ws.readyState !== WebSocket.OPEN) {
+
+            log(
+                "[WEBRTC] Signalling socket is not open; not sending the answer"
+            );
+
+            return;
+        }
 
         ws.send(
             JSON.stringify({

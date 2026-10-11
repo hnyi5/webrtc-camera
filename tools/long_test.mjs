@@ -17,6 +17,9 @@ const DURATION_MS = Number(process.argv[2] || 3600000);
 const SAMPLE_MS = Number(process.argv[3] || 5000);
 const OUT_FILE = process.argv[4] || "long-test.jsonl";
 
+// A CDP reply that never arrives must not hang the sampler.
+const CDP_TIMEOUT_MS = 30000;
+
 const CDP_HTTP =
     process.env.DSH_CDP_HTTP || "http://127.0.0.1:9222";
 
@@ -28,6 +31,11 @@ const READ_PANEL = `JSON.stringify({
   // sampled data and every report stay pure ASCII.
   icePath: (document.getElementById("icePath")?.textContent || "")
     .replace(/\u2192/g, "->"),
+  decodedFps: document.getElementById("decodedFps")?.textContent,
+  // A hidden tab throttles timers and stops rVFC, so the sampler keeps
+  // recording the last value.  Without this flag, "the tab was hidden" and
+  // "the latency was stable" are indistinguishable in the data.
+  hidden: document.hidden,
   fps: document.getElementById("fps")?.textContent,
   bitrate: document.getElementById("bitrate")?.textContent,
   resolution: document.getElementById("resolution")?.textContent,
@@ -129,8 +137,36 @@ async function connect() {
 
 function send(method, params = {}) {
   const id = ++nextId;
-  socket.send(JSON.stringify({ id, method, params }));
-  return new Promise((resolve) => pending.set(id, resolve));
+
+  try {
+    socket.send(JSON.stringify({ id, method, params }));
+  } catch (error) {
+    return Promise.reject(error);
+  }
+
+  /*
+   * Always settle, one way or the other.
+   *
+   * A CDP socket that dies mid-request never delivers the matching reply.  The
+   * earlier version registered only a resolve, so the await in the sampling
+   * loop never finished and Node exited with "unsettled top-level await" --
+   * the run simply stopped, looking exactly like a run that had ended.
+   */
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      reject(
+        new Error(
+          `cdp ${method} timed out after ${CDP_TIMEOUT_MS} ms`
+        )
+      );
+    }, CDP_TIMEOUT_MS);
+
+    pending.set(id, (value) => {
+      clearTimeout(timer);
+      resolve(value);
+    });
+  });
 }
 
 async function takeSample() {
@@ -191,5 +227,13 @@ while (Date.now() - startedAt < DURATION_MS) {
 }
 
 console.log(stamp(), `finished samples=${samples} exceptions=${exceptionCount}`);
-stream.end();
-process.exit(0);
+
+// Let the write stream flush before exiting: process.exit() straight after
+// end() can drop whatever is still buffered, which silently truncates the tail
+// of a run.
+stream.end(() => process.exit(0));
+
+setTimeout(() => {
+  console.error(stamp(), "stream did not flush in time; exiting anyway");
+  process.exit(1);
+}, 5000).unref();
