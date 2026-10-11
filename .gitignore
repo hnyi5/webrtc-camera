@@ -14,3 +14,12 @@ __pycache__/
 .idea/
 *.swp
 .DS_Store
+
+# ---------------------------------------------------------------------------
+# deployment secrets -- never commit these
+# ---------------------------------------------------------------------------
+# The public deployment keeps them in /etc/dsh-camera/env, deliberately outside
+# the repository, so that no static file server can ever publish them.
+deploy/secrets.env
+secrets.env
+*.secret

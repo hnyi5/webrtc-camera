@@ -35,7 +35,7 @@ class WebRTCSender:
         # WebSocket
         # ============================================================
 
-        self.ws_url = config.SIGNALING_URL
+        self.ws_url = config.signaling_url_with_token()
         self.ws = None
         self.ws_connected = threading.Event()
 

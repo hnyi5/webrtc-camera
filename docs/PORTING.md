@@ -29,7 +29,7 @@
 | 配置项 | 环境变量 | 默认值 | 说明 |
 |---|---|---|---|
 | 视频源类型 | `DSH_VIDEO_SOURCE` | `v4l2src` | 设为 `videotestsrc` 用测试彩条，**不需要摄像头** |
-| 摄像头设备 | `DSH_VIDEO_DEVICE` | `/dev/video0` | |
+| 摄像头设备 | `DSH_VIDEO_DEVICE` | `/dev/video0` | ⚠️ **强烈建议改用 `/dev/v4l/by-id/...` 稳定路径** —— `/dev/videoN` 按枚举顺序分配，重新插拔或重启后会变，症状是 `Failed to start pipeline`（且不提示设备问题） |
 | 采集格式 | `DSH_VIDEO_CAPS` | `image/jpeg,width=1920,height=1080,framerate=30/1` | 必须匹配目标摄像头能力 |
 | 信令地址 | `DSH_SIGNALING_URL` | `ws://127.0.0.1:8765` | sender 连这里 |
 | 信令绑定 | `DSH_SIGNALING_HOST` / `_PORT` | `0.0.0.0` / `8765` | 信令服务器监听 |
