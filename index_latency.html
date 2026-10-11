@@ -903,6 +903,19 @@ function buildSignalingUrl() {
     );
 }
 
+/*
+ * The signalling URL with the token hidden.
+ *
+ * When a socket fails, the first question is always "was it even aiming at the
+ * right place" -- and behind a tunnel the page and the signalling socket sit on
+ * different hostnames, so that question is easy to get wrong.  Printing the URL
+ * into the log answers it; printing the token into the log would not.
+ */
+function describeSignalingUrl() {
+
+    return buildSignalingUrl().replace(/token=[^&]*/, "token=***");
+}
+
 const ws =
     new WebSocket(
         buildSignalingUrl()
@@ -1179,6 +1192,10 @@ ws.onopen = () => {
 
     log(
         "[SIGNALING] WebSocket connected"
+    );
+
+    log(
+        "[SIGNALING] using " + describeSignalingUrl()
     );
 
     /*
@@ -2256,8 +2273,13 @@ ws.onmessage = async (event) => {
 
 ws.onerror = () => {
 
+    /*
+     * Browsers do not expose why a WebSocket failed -- no status, no reason.
+     * The one useful thing that can be said is which URL was being tried,
+     * because behind a tunnel that is the usual suspect.
+     */
     log(
-        "[SIGNALING] WebSocket error"
+        "[SIGNALING] WebSocket error on " + describeSignalingUrl()
     );
 
     setConnectionStatus("failed");
@@ -2268,10 +2290,26 @@ ws.onerror = () => {
    WebSocket close
 ------------------------------------------------------- */
 
-ws.onclose = () => {
+ws.onclose = (event) => {
 
+    /*
+     * The close code is the only structured clue a browser gives:
+     *
+     *   1000 normal            1001 going away
+     *   1006 abnormal          -> nothing was received at all: network, DNS,
+     *                             TLS or a tunnel hop, NOT our server
+     *   1008 policy violation  -> our own auth rejected it (bad token)
+     *   1011 server error
+     *
+     * 1006 with an empty reason is the signature of the hop between the client
+     * and the tunnel edge, which is exactly the case this page could not
+     * previously distinguish.
+     */
     log(
-        "[SIGNALING] WebSocket closed"
+        "[SIGNALING] WebSocket closed: code=" + event.code +
+        " reason=" + (event.reason || "(none)") +
+        " clean=" + event.wasClean +
+        " url=" + describeSignalingUrl()
     );
 
     setConnectionStatus("failed");
