@@ -146,12 +146,32 @@ def match_miss(record):
         return None, None
 
 
-first_match, first_miss = match_miss(first)
-last_match, last_miss = match_miss(last)
+# Sum the positive deltas instead of last - first.  A page reload resets the
+# counters to zero, and last - first then reports a negative total -- which is
+# exactly what a recovery in the middle of a run used to produce.
+added_match = 0
+added_miss = 0
+previous_pair = None
 
-if last_match is not None:
-    added_match = last_match - (first_match or 0)
-    added_miss = last_miss - (first_miss or 0)
+for record in samples:
+    pair = match_miss(record)
+
+    if pair[0] is None or pair[1] is None:
+        previous_pair = None
+        continue
+
+    if previous_pair is not None:
+        delta_match = pair[0] - previous_pair[0]
+        delta_miss = pair[1] - previous_pair[1]
+
+        # A negative delta means the page reloaded and the counter restarted.
+        if delta_match >= 0 and delta_miss >= 0:
+            added_match += delta_match
+            added_miss += delta_miss
+
+    previous_pair = pair
+
+if added_match or added_miss:
     total = added_match + added_miss
     rate = 100.0 * added_match / total if total else 0.0
     print(f"match/miss during the run: {added_match} / {added_miss}  "
@@ -167,6 +187,29 @@ for record in samples:
 print("connection states seen:")
 for key, count in sorted(states.items(), key=lambda kv: -kv[1]):
     print(f"  {count:5d} x  conn={key[0]} peer={key[1]} ice={key[2]}")
+
+print()
+
+paths = {}
+for record in samples:
+    value = record.get("icePath")
+    if value:
+        paths[value] = paths.get(value, 0) + 1
+
+print("ICE path selected:")
+if not paths:
+    print("  (not recorded -- page build predates the ICE path row)")
+else:
+    for value, count in sorted(paths.items(), key=lambda kv: -kv[1]):
+        if "TURN" in value:
+            note = "   <-- RELAYED: not comparable with a direct path"
+        elif "P2P" in value:
+            note = "   (direct peer-to-peer)"
+        elif "LAN" in value:
+            note = "   (same LAN)"
+        else:
+            note = ""
+        print(f"  {count:5d} x  {value}{note}")
 
 print()
 

@@ -24,6 +24,10 @@ const READ_PANEL = `JSON.stringify({
   conn: document.getElementById("connectionStatusText")?.textContent,
   peer: document.getElementById("peerConnection")?.textContent,
   ice: document.getElementById("iceConnection")?.textContent,
+  // The page renders e.g. "host \u2192 prflx"; translate it so the
+  // sampled data and every report stay pure ASCII.
+  icePath: (document.getElementById("icePath")?.textContent || "")
+    .replace(/\u2192/g, "->"),
   fps: document.getElementById("fps")?.textContent,
   bitrate: document.getElementById("bitrate")?.textContent,
   resolution: document.getElementById("resolution")?.textContent,

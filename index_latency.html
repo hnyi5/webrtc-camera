@@ -514,6 +514,11 @@
                     <span class="stat-value" id="peerConnection">--</span>
                 </div>
 
+                <div class="stat-row">
+                    <span class="stat-label">ICE path</span>
+                    <span class="stat-value" id="icePath">--</span>
+                </div>
+
             </div>
 
         </div>
@@ -669,6 +674,9 @@ const iceConnectionElement =
 
 const peerConnectionElement =
     document.getElementById("peerConnection");
+
+const icePathElement =
+    document.getElementById("icePath");
 
 const overlayResolution =
     document.getElementById("overlayResolution");
@@ -2468,6 +2476,78 @@ async function updateStats() {
 
 
         if (selectedCandidatePair) {
+
+            /*
+             * Which kind of path was actually chosen.
+             *
+             * This decides how the latency numbers must be read.  A relayed
+             * path goes through a TURN server and picks up a detour that has
+             * nothing to do with the camera or this software, so its numbers
+             * are NOT comparable with a direct path.
+             *
+             *   host  -> host    same LAN, no NAT traversal involved
+             *   srflx/prflx      direct peering through NAT (hole punched)
+             *   relay            TURN relay -- treat measurements with care
+             */
+            const localCandidate =
+                stats.get(
+                    selectedCandidatePair.localCandidateId
+                );
+
+            const remoteCandidate =
+                stats.get(
+                    selectedCandidatePair.remoteCandidateId
+                );
+
+            if (localCandidate && remoteCandidate) {
+
+                const localType =
+                    localCandidate.candidateType || "?";
+
+                const remoteType =
+                    remoteCandidate.candidateType || "?";
+
+                const relayed =
+                    localType === "relay" ||
+                    remoteType === "relay";
+
+                let pathLabel =
+                    localType +
+                    " \u2192 " +
+                    remoteType;
+
+                if (relayed) {
+
+                    pathLabel += "  TURN";
+
+                    if (
+                        selectedCandidatePair
+                            .relayProtocol
+                    ) {
+                        pathLabel +=
+                            "/" +
+                            selectedCandidatePair
+                                .relayProtocol;
+                    }
+                }
+                else if (
+                    localType === "host" &&
+                    remoteType === "host"
+                ) {
+                    pathLabel += "  LAN";
+                }
+                else {
+                    pathLabel += "  P2P";
+                }
+
+                icePathElement.textContent =
+                    pathLabel;
+
+                icePathElement.className =
+                    relayed
+                        ? "stat-value warning"
+                        : "stat-value good";
+            }
 
             if (
                 selectedCandidatePair.currentRoundTripTime
