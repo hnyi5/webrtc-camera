@@ -17,11 +17,20 @@ Run in the VM (foreground, exits by itself):
     python3 tools/timesrv.py [port] [count]
 """
 
+import os
 import socket
 import sys
 import time
 
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 9099
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import config
+
+PORT = (
+    int(sys.argv[1])
+    if len(sys.argv) > 1
+    else config.TIME_SERVER_PORT
+)
 COUNT = int(sys.argv[2]) if len(sys.argv) > 2 else 15
 
 server = socket.socket()

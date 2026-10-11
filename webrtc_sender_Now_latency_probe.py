@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import sys
 import json
 import threading
@@ -7,8 +8,12 @@ import time
 from collections import deque
 from datetime import datetime
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import gi
 import websocket
+
+import config
 
 gi.require_version("Gst", "1.0")
 gi.require_version("GstWebRTC", "1.0")
@@ -30,7 +35,7 @@ class WebRTCSender:
         # WebSocket
         # ============================================================
 
-        self.ws_url = "ws://127.0.0.1:8765"
+        self.ws_url = config.SIGNALING_URL
         self.ws = None
         self.ws_connected = threading.Event()
 
@@ -99,20 +104,16 @@ class WebRTCSender:
         #
         # ============================================================
 
-        pipeline_description = """
-            v4l2src device=/dev/video0 io-mode=mmap
-            !
-            image/jpeg,width=1920,height=1080,framerate=30/1
-            !
-            jpegdec
+        pipeline_description = f"""
+            {config.video_source_description()}
             !
             identity name=timestamp_probe
             !
             x264enc
                 tune=zerolatency
-                speed-preset=ultrafast
-                bitrate=4000
-                key-int-max=30
+                speed-preset={config.SPEED_PRESET}
+                bitrate={config.BITRATE_KBPS}
+                key-int-max={config.KEY_INT_MAX}
             !
             h264parse
             !
@@ -127,6 +128,15 @@ class WebRTCSender:
                 max-size-bytes=0
                 max-size-time=0
         """
+
+        print("[CONFIG] effective configuration:", flush=True)
+        for _line in config.describe():
+            print("[CONFIG]   " + _line, flush=True)
+        print(
+            "[CONFIG] pipeline: "
+            + " ".join(pipeline_description.split()),
+            flush=True,
+        )
 
         self.pipeline = Gst.parse_launch(
             pipeline_description

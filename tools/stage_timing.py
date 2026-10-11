@@ -39,9 +39,15 @@ letting the driver's queue build up.
 Usage: python3 tools/stage_timing.py <mode> [seconds] [do_timestamp]
 """
 
+import os
 import statistics
 import sys
 import time
+
+sys.path.insert(
+    0,
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+)
 
 import gi
 
@@ -49,16 +55,18 @@ gi.require_version("Gst", "1.0")
 
 from gi.repository import GLib, Gst
 
+import config
+
 Gst.init(None)
 
 MODE = sys.argv[1] if len(sys.argv) > 1 else "light"
 SECONDS = int(sys.argv[2]) if len(sys.argv) > 2 else 8
 DO_TIMESTAMP = (sys.argv[3] if len(sys.argv) > 3 else "false").lower() == "true"
 
-CAPS = "image/jpeg,width=1920,height=1080,framerate=30/1"
+CAPS = config.VIDEO_CAPS
 
 v4l2 = (
-    "v4l2src name=cam device=/dev/video0 io-mode=mmap "
+    f"v4l2src name=cam device={config.VIDEO_DEVICE} io-mode=mmap "
     f"do-timestamp={'true' if DO_TIMESTAMP else 'false'} ! {CAPS}"
 )
 

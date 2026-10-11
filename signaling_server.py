@@ -2,7 +2,14 @@
 
 import asyncio
 import json
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import websockets
+
+import config
 
 
 clients = set()
@@ -33,12 +40,15 @@ async def handler(websocket):
 
 
 async def main():
-    print("[SIGNALING] WebSocket server starting on 0.0.0.0:8765")
+    print(
+        "[SIGNALING] WebSocket server starting on "
+        f"{config.SIGNALING_HOST}:{config.SIGNALING_PORT}"
+    )
 
     async with websockets.serve(
         handler,
-        "0.0.0.0",
-        8765
+        config.SIGNALING_HOST,
+        config.SIGNALING_PORT
     ):
         print("[SIGNALING] WebSocket server ready")
         await asyncio.Future()

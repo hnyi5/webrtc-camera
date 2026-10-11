@@ -10,7 +10,13 @@ RTP packet.
 Run:  python3 tools/pts_diag.py [seconds]
 """
 
+import os
 import sys
+
+sys.path.insert(
+    0,
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+)
 
 import gi
 
@@ -18,14 +24,16 @@ gi.require_version("Gst", "1.0")
 
 from gi.repository import GLib, Gst
 
+import config
+
 Gst.init(None)
 
 RUN_SECONDS = int(sys.argv[1]) if len(sys.argv) > 1 else 6
 
-PIPELINE = """
-    v4l2src name=cam device=/dev/video0 io-mode=mmap
+PIPELINE = f"""
+    v4l2src name=cam device={config.VIDEO_DEVICE} io-mode=mmap
     !
-    image/jpeg,width=1920,height=1080,framerate=30/1
+    {config.VIDEO_CAPS}
     !
     jpegdec name=jdec
     !

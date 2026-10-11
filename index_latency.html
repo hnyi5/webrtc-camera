@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebRTC Camera Monitor</title>
 
+    <!--
+        Deployment settings (signalling port, ICE servers).
+        Generated from config.py by tools/make_page_config.py.
+        A missing file is fine: the defaults in the script below are used.
+    -->
+    <script src="config.js"></script>
+
     <style>
         * {
             box-sizing: border-box;
@@ -803,8 +810,16 @@ function setConnectionStatus(state) {
    PeerConnection
 ------------------------------------------------------- */
 
+const DSH_CONFIG = window.DSH_CONFIG || {};
+
+const DSH_SIGNALING_PORT =
+    DSH_CONFIG.signalingPort || 8765;
+
+const DSH_ICE_SERVERS =
+    DSH_CONFIG.iceServers || [];
+
 const pc = new RTCPeerConnection({
-    iceServers: []
+    iceServers: DSH_ICE_SERVERS
 });
 
 
@@ -814,7 +829,9 @@ const pc = new RTCPeerConnection({
 
 const ws =
     new WebSocket(
-        "ws://" + location.hostname + ":8765"
+        (location.protocol === "https:" ? "wss://" : "ws://")
+        + location.hostname
+        + ":" + DSH_SIGNALING_PORT
     );
 
 let remoteDescriptionSet = false;

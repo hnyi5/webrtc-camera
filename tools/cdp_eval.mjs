@@ -8,7 +8,8 @@
  * Usage: node cdp_eval.mjs "location.reload()"
  */
 
-const CDP_HTTP = "http://127.0.0.1:9222";
+const CDP_HTTP =
+    process.env.DSH_CDP_HTTP || "http://127.0.0.1:9222";
 const expression = process.argv[2];
 
 if (!expression) {
