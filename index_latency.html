@@ -1802,7 +1802,45 @@ function updateMatchedLatency(
     latencyCaptureCallbackElement.textContent =
         formatLatency(captureToCallback);
 
-    if (Number.isFinite(receiveEpochMs)) {
+    if (!decompositionMeaningful) {
+
+        /*
+         * The total is still the best estimate available, but it inherits the
+         * same uncertainty, and saying so is the difference between a
+         * measurement and a number.
+         */
+        latencyMetadataElement.textContent =
+            "clock sync \u00b1"
+            + (offsetUncertaintyMs === null
+                ? "?"
+                : offsetUncertaintyMs.toFixed(1) + " ms")
+            + " \u2014 stage split not shown";
+    }
+
+    /*
+     * How far the clock offset can be out.
+     *
+     * Every figure on this panel is referenced to the sender's clock, and the
+     * offset that puts both ends on one time base is only good to about half its
+     * round trip: a delay that lands on one direction and not the other biases
+     * it by up to that much.  On a LAN the round trip is 1-4 ms, so this is
+     * under 2 ms and invisible.  Measured through a tunnel it was 521 ms, so the
+     * offset can be wrong by 260 ms -- several times the latency being reported.
+     */
+    const offsetUncertaintyMs =
+        Number.isFinite(clockOffsetRttMs)
+            ? clockOffsetRttMs / 2
+            : null;
+
+    /*
+     * Ten milliseconds is a judgement, but it is about where a decomposition of
+     * tens of milliseconds stops being readable.
+     */
+    const decompositionMeaningful =
+        Number.isFinite(offsetUncertaintyMs)
+        && offsetUncertaintyMs <= 10;
+
+    if (Number.isFinite(receiveEpochMs) && decompositionMeaningful) {
 
         const captureToReceive =
             receiveEpochMs -
@@ -1812,11 +1850,20 @@ function updateMatchedLatency(
             callbackEpochMs -
             receiveEpochMs;
 
+        /*
+         * A negative delay cannot happen, so if the arithmetic produces one the
+         * offset is wrong by more than the value.  Say nothing rather than
+         * something impossible.
+         */
         latencyCaptureReceiveElement.textContent =
-            formatLatency(captureToReceive);
+            captureToReceive < 0
+                ? "--"
+                : formatLatency(captureToReceive);
 
         latencyReceiveCallbackElement.textContent =
-            formatLatency(receiveToCallback);
+            receiveToCallback < 0
+                ? "--"
+                : formatLatency(receiveToCallback);
     }
     else {
 
