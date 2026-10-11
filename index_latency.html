@@ -686,6 +686,9 @@ const peerConnectionElement =
 const icePathElement =
     document.getElementById("icePath");
 
+/* Throttle for the ICE summary log, which runs on every stats poll. */
+let lastIceSummaryMs = 0;
+
 const overlayResolution =
     document.getElementById("overlayResolution");
 
@@ -2859,6 +2862,56 @@ async function updateStats() {
          * source for current RTT.
          */
 
+        /*
+         * What ICE actually produced.
+         *
+         * A failure to gather any srflx is a different problem from gathering
+         * one and never getting a pair to work, and they need different fixes --
+         * so count both, and say so when nothing connects.
+         */
+        const localCandidates = {};
+        const pairStates = {};
+
+        stats.forEach(
+            report => {
+
+                if (report.type === "local-candidate") {
+
+                    const kind =
+                        report.candidateType || "?";
+
+                    localCandidates[kind] =
+                        (localCandidates[kind] || 0) + 1;
+                }
+
+                if (report.type === "candidate-pair") {
+
+                    const state =
+                        report.state || "?";
+
+                    pairStates[state] =
+                        (pairStates[state] || 0) + 1;
+                }
+            }
+        );
+
+        const candidateSummary =
+            Object.entries(localCandidates)
+                .map(
+                    ([kind, count]) =>
+                        kind + " " + count
+                )
+                .join(" · ") || "none";
+
+        const pairSummary =
+            Object.entries(pairStates)
+                .map(
+                    ([state, count]) =>
+                        state + " " + count
+                )
+                .join(" · ") || "none";
+
+
         let selectedCandidatePair = null;
 
         stats.forEach(
@@ -2976,6 +3029,44 @@ async function updateStats() {
                     rttMs.toFixed(1) +
                     " ms";
             }
+        }
+        else {
+
+            /*
+             * Nothing connected, so the candidates are the only informative
+             * thing left: they say whether this is STUN not getting through or
+             * a NAT too strict to punch through.
+             */
+            icePathElement.textContent =
+                candidateSummary +
+                " | pairs: " +
+                pairSummary;
+
+            icePathElement.className =
+                (
+                    localCandidates.srflx ||
+                    localCandidates.prflx ||
+                    localCandidates.relay
+                )
+                    ? "stat-value warning"
+                    : "stat-value bad";
+        }
+
+        /*
+         * Into the event log too, throttled -- the panel shows the last value,
+         * but a screenshot of the log survives a page that has moved on, and
+         * this is the line that decides what to do next.
+         */
+        const nowMs = Date.now();
+
+        if (nowMs - lastIceSummaryMs > 5000) {
+
+            lastIceSummaryMs = nowMs;
+
+            log(
+                "[ICE] candidates: " + candidateSummary +
+                " | pairs: " + pairSummary
+            );
         }
 
     }
