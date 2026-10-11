@@ -1517,3 +1517,131 @@ host -> prflx  P2P
 
 > 顺带确认：分析器一直是用 `encoding="utf-8"` 读文件的，JSONL 也是 UTF-8
 > 写入，所以**数据链本身没有问题**，乱码只出现在控制台显示环节。
+
+---
+
+# 34. 2026-10-11 公网安全层
+
+## 34.1 威胁模型
+
+把服务放上公网之前必须解决两件事：
+
+| 威胁 | 后果 |
+|---|---|
+| 信令服务器无鉴权 | 任何人可连上并注入 SDP，劫持会话 |
+| **TURN 服务器无鉴权** | 被扫描器在几小时内找到、当成免费中继 —— **按流量计费下这是直接扣钱**（100 GB/天 约 ¥80/天） |
+
+## 34.2 共享令牌
+
+一个共享密钥，同时用于两处：
+
+```text
+信令 WebSocket :  ws://host:8765/?token=<secret>
+页面链接       :  http://host:8000/index_latency.html?token=<secret>
+                  （页面从自己的 URL 读出 token，再带给信令）
+```
+
+实现要点：
+
+- **在 HTTP 握手阶段就拒绝**（`process_request`），而不是连上之后再断开 ——
+  坏 token 得到干净的 401，而不是一个"开了就关"的 socket
+- **常量时间比较**（`hmac.compare_digest`）—— 普通 `==` 会让攻击者通过
+  计时逐字节猜出 token
+- **token 为空 = 鉴权关闭**，启动时打印醒目警告。这样局域网工作流完全不变
+
+**踩过的坑（值得记下来）**：第一版把检查放在 handler 里，从连接对象上取
+`request.path`。websockets 16 上那个属性不在预期位置，于是**路径恒为空、
+所有连接都被拒**（包括正确的 token），现象看起来像"鉴权逻辑坏了"。
+改用 `process_request(connection, request)` 后 `request.path` 直接可用，
+而且**确实带查询串**（`'/some/path?token=abc&other=1'`）。
+
+## 34.3 TURN 短时凭据（服务器侧已就绪）
+
+**绝不用长期密码，更绝不能把密码写进公开的页面。** 用 coturn 的
+`use-auth-secret`：
+
+```text
+username   = <过期时间戳>
+credential = base64(HMAC-SHA1(static-auth-secret, username))
+```
+
+密钥**永不离开服务器**。已实现并测试：
+
+```text
+[ok]  username is the expiry timestamp   1000003600
+[ok]  credential is base64(HMAC-SHA1(secret, username))
+[ok]  the secret itself is not in the result
+[ok]  a later mint gets a different username
+```
+
+**当前状态**：服务器侧已安全（没有凭据就用不了中继），但**发放端点还没接** ——
+所以 TURN 暂时还不能实际使用。**P2P 不受影响，已经完全可用。**
+
+## 34.4 服务器加固（`deploy/turnserver.conf.template`）
+
+| 项 | 作用 |
+|---|---|
+| `use-auth-secret` | 必须认证 |
+| `max-bps` | 每会话带宽上限 |
+| `total-quota` / `user-quota` | 并发配额 |
+| `denied-peer-ip` 私有网段 | 防止被用来探测云内网 |
+| `no-multicast-peers` / `no-tlsv1` | 常规加固 |
+| `external-ip=PUBLIC/PRIVATE` | **阿里云公网 IP 是 1:1 NAT，少了这行 relay 候选全是坏的** |
+
+## 34.5 仓库卫生
+
+- 密钥放在 `/etc/dsh-camera/env`，**故意放在仓库之外** ——
+  这样任何一次"静态文件服务器配错"都不可能泄露它
+- `.gitignore` 额外挡一层
+- **新增 `serve_page.py`**：原来的 `python -m http.server` 会
+  **把整个工作目录发布出去**（含测量数据、笔记、任何残留密钥）。
+  新服务器**只应答 `index_latency.html` 和 `config.js` 两个文件**
+
+## 34.6 端到端验证
+
+```text
+part 1  TURN 凭据与 URL 组装                    10/10 通过
+part 2  实时鉴权
+        [ok] correct token accepted   open
+        [ok] wrong token refused      handshake refused (InvalidStatus)
+        [ok] missing token refused    handshake refused (InvalidStatus)
+
+开鉴权后的正常链路（真摄像头，带 token）:
+        conn=CONNECTED  peer=connected  ice=connected
+        match/miss = 597 / 0  ->  100.00%
+        ICE path   = host -> prflx  P2P
+        fps 29.8,  Source->Receive P50 11.0 ms
+```
+
+**结论：鉴权没有影响正常链路。**
+
+## 34.7 顺带发现的一个真问题：摄像头设备号不稳定
+
+验证过程中 sender 反复报 `Failed to start pipeline`。查出来是
+**摄像头从 `/dev/video0` 变成了 `/dev/video1`**（重新枚举过）。
+
+**`/dev/videoN` 按枚举顺序分配，会变。** 稳定路径是：
+
+```text
+/dev/v4l/by-id/usb-webcam_webcam_AN20200907002-video-index0   <- 摄像头
+/dev/v4l/by-id/usb-webcam_webcam_AN20200907002-video-index1   <- 元数据
+```
+
+**建议 `DSH_VIDEO_DEVICE` 用 by-id 路径。** 已做三件事：
+
+1. `config.py` 启动时如果设备不存在会**明确报出来并列出 by-id 路径** ——
+   否则症状是"管线启动失败"，会让人去查管线而不是查配置
+2. `tools/preflight.py` 会主动列出所有稳定路径
+3. `docs/PORTING.md` 把它标成移植时最容易踩的坑之一
+
+## 34.8 新增/改动的文件
+
+| 文件 | 作用 |
+|---|---|
+| `serve_page.py` | 只服务页面和 config.js（不再暴露整个仓库） |
+| `tools/restart_stack.sh` | 安全重启整套服务（避免 pgrep 杀掉自己的 shell） |
+| `tools/verify_security.py` | 安全层验证（凭据铸造 + 实时鉴权） |
+| `deploy/turnserver.conf.template` | coturn 加固配置 |
+| `deploy/setup-server.sh` | 一键部署 coturn + 信令 + 页面 |
+| `deploy/secrets.env.example` | 密钥模板 |
+| `deploy/README.md` | 完整部署与排错指南 |
