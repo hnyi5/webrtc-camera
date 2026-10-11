@@ -874,10 +874,37 @@ function buildSignalingUrl() {
 
     if (!explicit) {
 
+        const scheme =
+            location.protocol === "https:" ? "wss://" : "ws://";
+
+        /*
+         * Same origin when this page came from the signalling port.
+         *
+         * location.host carries the port only when it is not the default, so
+         * behind a tunnel this becomes wss://host/ -- the same host the page
+         * itself arrived from.  That matters more than it looks: if the page
+         * loads from one address and the signalling lives on another, a carrier
+         * that interferes with one address but not the other leaves a page
+         * that looks alive and a socket that dies with code 1006, with nothing
+         * to say why.
+         */
+        /*
+         * An empty port means the default for the scheme -- which is what a
+         * tunnel gives us (https://host/...).  Testing only for an exact match
+         * against the signalling port would be false there, and the page would
+         * then aim at host:8765, which nothing is listening on behind a
+         * tunnel.  That is the same 1006 this whole change exists to remove.
+         */
+        const sameOrigin =
+            location.port === ""
+            || location.port === String(DSH_SIGNALING_PORT);
+
+        const base = sameOrigin
+            ? location.host
+            : location.hostname + ":" + DSH_SIGNALING_PORT;
+
         return (
-            (location.protocol === "https:" ? "wss://" : "ws://")
-            + location.hostname
-            + ":" + DSH_SIGNALING_PORT
+            scheme + base
             + "/?token=" + encodeURIComponent(DSH_TOKEN)
             + "&role=viewer"
         );

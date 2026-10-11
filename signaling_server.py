@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 
 import asyncio
+import pathlib
 import hmac
 import http
 import json
 import os
 import sys
 from urllib.parse import parse_qs, urlsplit
+
+from websockets.datastructures import Headers
+from websockets.http11 import Response
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -43,6 +47,57 @@ def role_from_path(path):
     return "sender" if role == "sender" else "viewer"
 
 
+# The two files the page needs, and their content types.
+#
+# Served from this port on purpose: the page and the WebSocket then share one
+# origin, which is what stops a half-working deployment where the page loads
+# from one address and every WebSocket to another address dies with code 1006.
+#
+# No token is required for these.  The page carries the token in its own URL
+# anyway, and a <script src="config.js"> cannot attach one -- requiring it would
+# silently strip the page's configuration, which is a confusing way to fail.
+STATIC_FILES = {
+    "/index_latency.html": ("index_latency.html", "text/html; charset=utf-8"),
+    "/config.js": ("config.js", "application/javascript; charset=utf-8"),
+}
+
+
+def static_response(path):
+    """The page file for this path, or None if it is not one of them."""
+    entry = STATIC_FILES.get(path)
+
+    if entry is None:
+        return None
+
+    name, content_type = entry
+    file_path = pathlib.Path(__file__).resolve().parent / name
+
+    if not file_path.is_file():
+        return Response(
+            404,
+            "Not Found",
+            Headers({"Content-Type": "text/plain; charset=utf-8"}),
+            ("not found: " + name + "\n").encode(),
+        )
+
+    body = file_path.read_bytes()
+
+    return Response(
+        200,
+        "OK",
+        Headers(
+            {
+                "Content-Type": content_type,
+                "Content-Length": str(len(body)),
+                # Regenerated whenever config.py changes, so a cached copy
+                # would quietly keep talking to an old address.
+                "Cache-Control": "no-store",
+            }
+        ),
+        body,
+    )
+
+
 def token_from_path(path):
     """Pull ?token=... out of the handshake request path."""
     values = parse_qs(urlsplit(path or "").query).get("token")
@@ -58,6 +113,15 @@ async def process_request(connection, request):
     Rejecting here rather than inside the handler means a client with a bad
     token sees a clean 401, not a connection that opens and instantly closes.
     """
+    path = urlsplit(request.path or "").path
+
+    # Page files first: a plain GET for one of them is answered here, and
+    # anything else -- the WebSocket upgrade included -- falls through.
+    page = static_response(path)
+
+    if page is not None:
+        return page
+
     role = role_from_path(request.path)
 
     if config.ACCESS_TOKEN:

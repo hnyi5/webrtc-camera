@@ -13,7 +13,7 @@
  */
 window.DSH_CONFIG = {
     "signalingPort": 8765,
-    "signalingUrl": "wss://parent-oliver-phone-francis.trycloudflare.com",
+    "signalingUrl": "",
     "iceServers": [
         {
             "urls": "stun:stun.l.google.com:19302"
