@@ -72,6 +72,18 @@ SIGNALING_URL = _str("DSH_SIGNALING_URL", "ws://127.0.0.1:8765")
 SIGNALING_HOST = _str("DSH_SIGNALING_HOST", "0.0.0.0")
 SIGNALING_PORT = _int("DSH_SIGNALING_PORT", 8765)
 
+# Full public URL of the signalling server, when it is not reachable at the
+# page's own host and port.
+#
+# The page normally derives the address from `location.hostname` plus
+# SIGNALING_PORT, which is right when one address serves both.  It is wrong
+# behind a tunnel, where the page and the signalling socket get different
+# hostnames -- and the derived address then points at nothing, with the browser
+# reporting only "connection closed".
+#
+# Empty keeps the derived behaviour.
+SIGNALING_PUBLIC_URL = _str("DSH_SIGNALING_PUBLIC_URL", "")
+
 # ---------------------------------------------------------------------------
 # encoder
 # ---------------------------------------------------------------------------
@@ -178,6 +190,8 @@ def describe():
         f"video caps     : {VIDEO_CAPS}",
         f"signalling url : {SIGNALING_URL}",
         f"signalling bind: {SIGNALING_HOST}:{SIGNALING_PORT}",
+        "signalling public: "
+        + (SIGNALING_PUBLIC_URL or "(derived from the page's own host)"),
         f"encoder        : bitrate={BITRATE_KBPS} preset={SPEED_PRESET}"
         f" key-int-max={KEY_INT_MAX}",
         f"ice servers    : {ice_servers()}",
