@@ -47,6 +47,15 @@ def role_from_path(path):
     return "sender" if role == "sender" else "viewer"
 
 
+# How long a single relayed message may take before the target is dropped.
+#
+# The relay runs inside the SENDER'S or VIEWER'S receive loop, so a send that
+# never completes does not merely delay one message: it stops the server reading
+# from that client, which stops the client's own sends, which stalls the
+# session.  Dropping a target that cannot keep up is the cheap, local answer.
+SEND_TIMEOUT_SECONDS = 5
+
+
 # The two files the page needs, and their content types.
 #
 # Served from this port on purpose: the page and the WebSocket then share one
@@ -170,7 +179,11 @@ async def deliver(target, payload):
     whole session down with it.  Dropping the target is the cheap answer.
     """
     try:
-        await target.send(payload)
+        # Bounded on purpose.  A client that has stopped reading -- the sender
+        # under a busy GLib loop, most likely -- would otherwise block this
+        # viewer's receive loop forever, and with it the server's reads from
+        # that viewer, and with those the viewer's own sends.
+        await asyncio.wait_for(target.send(payload), timeout=SEND_TIMEOUT_SECONDS)
         return True
     except Exception as error:  # noqa: BLE001
         print(
