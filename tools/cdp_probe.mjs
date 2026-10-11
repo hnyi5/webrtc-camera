@@ -8,7 +8,8 @@
  * Usage: node cdp_probe.mjs [runMs] [label]
  */
 
-const CDP_HTTP = "http://127.0.0.1:9222";
+const CDP_HTTP =
+    process.env.DSH_CDP_HTTP || "http://127.0.0.1:9222";
 const RUN_MS = Number(process.argv[2] || 30000);
 const LABEL = process.argv[3] || "run";
 

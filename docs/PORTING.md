@@ -17,26 +17,51 @@
 | 断线自愈（监管循环 + 页面重载） | 纯进程管理 |
 | 浏览器端 `index_latency.html` | 已自适应：`ws://" + location.hostname + ":8765"` |
 
-### 1.2 硬编码清单（移植时必须逐条确认）
+### 1.2 部署相关配置全部集中在 `config.py`
 
-| # | 值 | 位置 | 移植时的动作 |
+**移植时不需要改任何业务代码。** 所有部署相关的值都在根目录 `config.py`，
+并可用环境变量覆盖：
+
+```
+优先级：  环境变量 DSH_*   >   config.py 里的值   >   内置默认值
+```
+
+| 配置项 | 环境变量 | 默认值 | 说明 |
 |---|---|---|---|
-| 1 | `ws://127.0.0.1:8765` | `webrtc_sender_Now_latency_probe.py:33` | 信令不在本机时**必须改**成目标地址 |
-| 2 | `device=/dev/video0` | `webrtc_sender_Now_latency_probe.py:103` | 确认目标机的设备号 |
-| 3 | `image/jpeg,width=1920,height=1080,framerate=30/1` | `webrtc_sender_Now_latency_probe.py:105` | 确认目标摄像头支持 MJPG 1080p30 |
-| 4 | 端口 `8765` | `signaling_server.py:41` | 与浏览器、sender 三方一致即可 |
-| 5 | `127.0.0.1:9222`（CDP） | `tools/cdp_probe.mjs:11`、`cdp_eval.mjs:11`、`long_test.mjs:20` | 仅影响自动化工具 |
-| 6 | 端口 `9099` | `tools/timesrv.py:24` | 仅影响时钟诊断工具 |
+| 视频源类型 | `DSH_VIDEO_SOURCE` | `v4l2src` | 设为 `videotestsrc` 用测试彩条，**不需要摄像头** |
+| 摄像头设备 | `DSH_VIDEO_DEVICE` | `/dev/video0` | |
+| 采集格式 | `DSH_VIDEO_CAPS` | `image/jpeg,width=1920,height=1080,framerate=30/1` | 必须匹配目标摄像头能力 |
+| 信令地址 | `DSH_SIGNALING_URL` | `ws://127.0.0.1:8765` | sender 连这里 |
+| 信令绑定 | `DSH_SIGNALING_HOST` / `_PORT` | `0.0.0.0` / `8765` | 信令服务器监听 |
+| 码率 | `DSH_BITRATE_KBPS` | `4000` | |
+| 编码预设 | `DSH_SPEED_PRESET` | `ultrafast` | |
+| STUN | `DSH_STUN_URL` | `stun:stun.l.google.com:19302` | 写进 `config.js` |
+| TURN | `DSH_TURN_URL` / `_USERNAME` / `_PASSWORD` | 空 | 只在被 CGNAT 挡住时需要 |
+| 页面端口 | `DSH_PAGE_PORT` | `8000` | 工具约定 |
+| CDP 调试地址 | `DSH_CDP_HTTP` | `http://127.0.0.1:9222` | 自动化工具用 |
+| 时间服务端口 | `DSH_TIME_SERVER_PORT` | `9099` | 时钟诊断用 |
 
-**另有 3 处同样的设备/格式硬编码在诊断工具里**，与主程序无关但一起改比较省事：
+```bash
+# 查看当前生效的完整配置
+python3 config.py
 
+# 一条命令覆盖，不修改任何文件
+DSH_VIDEO_DEVICE=/dev/video2 \
+DSH_SIGNALING_URL=ws://183.198.108.95:8765 \
+    ./run_sender_loop.sh
 ```
-tools/pts_diag.py:26,28        device= + image/jpeg,1920x1080,30/1
-tools/stage_timing.py:58,61    CAPS + device=
+
+**浏览器页面**读根目录的 `config.js`，它由 `config.py` 生成：
+
+```bash
+python3 tools/make_page_config.py           # 生成
+python3 tools/make_page_config.py --check   # 校验是否过期（可放进 CI）
 ```
 
-> 建议移植时顺手把 #1 #2 #3 改成环境变量（约 20 行改动），这样以后再搬机器就不用动代码。
-> 本次**没有**做这个改动 —— 需要先在目标机上实测通过再改。
+`config.js` 不存在时页面回落到内置默认值，全新克隆的仓库行为不变。
+
+> 信令地址的**主机名**仍取自 `location.hostname`（自适应），
+> 只有**端口**和 **ICE 服务器**来自配置。
 
 ---
 
@@ -123,7 +148,8 @@ python3 tools/preflight.py
 # ④ 再次预检，直到全绿
 python3 tools/preflight.py
 
-# ⑤ 改硬编码（见 1.2 节，至少改 #1 #2 #3）
+# ⑤ 按需覆盖配置（见 1.2 节）—— 不需要改代码
+#     先看当前生效值：python3 config.py
 
 # ⑥ 单独验证摄像头能力（不要直接跑整个项目）
 v4l2-ctl -d /dev/video0 --list-formats-ext | head -40

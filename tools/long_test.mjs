@@ -17,7 +17,8 @@ const DURATION_MS = Number(process.argv[2] || 3600000);
 const SAMPLE_MS = Number(process.argv[3] || 5000);
 const OUT_FILE = process.argv[4] || "long-test.jsonl";
 
-const CDP_HTTP = "http://127.0.0.1:9222";
+const CDP_HTTP =
+    process.env.DSH_CDP_HTTP || "http://127.0.0.1:9222";
 
 const READ_PANEL = `JSON.stringify({
   conn: document.getElementById("connectionStatusText")?.textContent,
