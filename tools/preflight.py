@@ -244,13 +244,46 @@ else:
                 "in the sender if needed" % device,
             )
 
-if not os.access("/dev/video0", os.R_OK):
+# /dev/videoN is assigned in enumeration order and moves when the camera is
+# re-plugged.  A sender pointed at the old number fails with "Failed to start
+# pipeline" and nothing that mentions the device.  These symlinks do not move.
+stable_dir = "/dev/v4l/by-id"
+
+if os.path.isdir(stable_dir):
+    stable = sorted(
+        os.path.join(stable_dir, name)
+        for name in os.listdir(stable_dir)
+        if name.endswith("-index0")
+    )
+
+    if stable:
+        ok("stable device paths (use one of these as DSH_VIDEO_DEVICE):")
+        for path in stable:
+            resolved = os.path.realpath(path)
+            print("           " + path + "  ->  " + resolved)
+    else:
+        warn("no capture nodes under " + stable_dir)
+else:
     warn(
-        "current user cannot read /dev/video0",
+        "no " + stable_dir + " -- device numbers may move between reboots",
+        "install v4l-utils, or check the kernel created /dev/v4l",
+    )
+
+
+# Probe whichever node actually came up rather than a hard-coded /dev/video0:
+# on a machine where the camera re-enumerated, video0 may not exist at all and
+# the warning then sends people looking in the wrong place.
+probe_device = devices[0] if devices else None
+
+if probe_device is None:
+    pass
+elif not os.access(probe_device, os.R_OK):
+    warn(
+        "current user cannot read " + probe_device,
         "sudo usermod -aG video $USER   then log out and back in",
     )
 else:
-    ok("current user can read /dev/video0")
+    ok("current user can read " + probe_device)
 
 # ---------------------------------------------------------------------------
 section("5. ports and services")

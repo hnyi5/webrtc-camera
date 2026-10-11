@@ -826,6 +826,20 @@ const DSH_SIGNALING_PORT =
 const DSH_ICE_SERVERS =
     DSH_CONFIG.iceServers || [];
 
+/*
+ * Shared access token, taken from this page's own URL:
+ *
+ *     http://<host>:8000/index_latency.html?token=<secret>
+ *
+ * The link that opens the page is what authorises the session.  Without it the
+ * signalling server refuses the connection, which is what stops a public
+ * deployment from being usable by strangers -- and the same secret is what
+ * gates the time-limited TURN credentials, so it protects the relay (and the
+ * traffic bill) from abuse too.
+ */
+const DSH_TOKEN =
+    new URLSearchParams(location.search).get("token") || "";
+
 const pc = new RTCPeerConnection({
     iceServers: DSH_ICE_SERVERS
 });
@@ -840,6 +854,7 @@ const ws =
         (location.protocol === "https:" ? "wss://" : "ws://")
         + location.hostname
         + ":" + DSH_SIGNALING_PORT
+        + "/?token=" + encodeURIComponent(DSH_TOKEN)
     );
 
 let remoteDescriptionSet = false;

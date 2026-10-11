@@ -1,0 +1,95 @@
+# coturn configuration for the dsh-camera project.
+#
+# deploy/setup-server.sh renders this file, substituting the __PLACEHOLDER__
+# values.  Do not edit the installed copy by hand -- edit this template and
+# re-run the script, or the two drift apart.
+#
+# Every option here exists for a reason.  See deploy/README.md.
+
+# ---------------------------------------------------------------------------
+# listening ports
+# ---------------------------------------------------------------------------
+listening-port=3478
+tls-listening-port=443
+
+# ---------------------------------------------------------------------------
+# public address
+# ---------------------------------------------------------------------------
+# Aliyun (and most clouds) put the public IPv4 behind a 1:1 NAT: the NIC only
+# ever has the private address, and inbound packets arrive addressed to the
+# public one.
+#
+# Without this line coturn advertises the private address in its STUN replies,
+# so clients receive a relay candidate that can never work -- and the symptom
+# looks exactly like a firewall problem, which is why people lose hours here.
+#
+# Format is PUBLIC/PRIVATE.
+external-ip=__PUBLIC_IP__/__PRIVATE_IP__
+
+# ---------------------------------------------------------------------------
+# authentication -- NEVER disable this
+# ---------------------------------------------------------------------------
+# Time-limited credentials (the "TURN REST API" scheme):
+#
+#     username   = <expiry unix timestamp>
+#     credential = base64(HMAC-SHA1(static-auth-secret, username))
+#
+# The secret itself never leaves the server, and a leaked credential stops
+# working when it expires.
+#
+# An open TURN server is found by internet scanners within hours and used as a
+# free relay.  On pay-per-traffic billing that is money straight out of the
+# account: at 100 GB/day it is roughly CNY 80/day.
+use-auth-secret
+static-auth-secret=__TURN_SECRET__
+realm=__TURN_REALM__
+
+# ---------------------------------------------------------------------------
+# abuse limits
+# ---------------------------------------------------------------------------
+# Per-session bandwidth cap.  Our video runs at 4 Mbps, so this leaves room
+# while keeping a stolen credential from being expensive.
+#
+# NOTE: coturn documents --max-bps as BYTES per second.  Verify the effective
+# limit during deployment (watch the bitrate the browser reports); if the
+# stream is throttled, this is the first thing to raise.
+max-bps=750000
+
+# Concurrent allocations, in total and per user.
+total-quota=12
+user-quota=4
+
+# ---------------------------------------------------------------------------
+# relay port range
+# ---------------------------------------------------------------------------
+# This range must be open for UDP in the cloud firewall.
+#
+# This is the rule everyone forgets.  Miss it and clients still receive a
+# relay candidate -- it just never connects, with no error anywhere.
+min-port=49152
+max-port=65535
+
+# ---------------------------------------------------------------------------
+# hardening
+# ---------------------------------------------------------------------------
+no-multicast-peers
+no-cli
+no-tlsv1
+no-tlsv1_1
+fingerprint
+
+# Never relay towards private, loopback or link-local space.  This stops the
+# server being used to probe the cloud provider's internal network.
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+
+# ---------------------------------------------------------------------------
+# logging
+# ---------------------------------------------------------------------------
+log-file=/var/log/turnserver.log
+simple-log
