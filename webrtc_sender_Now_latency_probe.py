@@ -896,8 +896,15 @@ class WebRTCSender:
     # WebRTC negotiation
     # =================================================================
 
-    def apply_turn_servers(self):
-        """Give webrtcbin the minted TURN credentials.
+    def apply_ice_servers(self):
+        """Give webrtcbin its STUN and TURN servers.
+
+        Both are preconditions rather than optimisations:
+
+          * without STUN the sender gathers host candidates only -- private
+            addresses -- so a browser on another network has nothing to send
+            to and the connection cannot be established at all;
+          * without TURN there is no fallback when hole punching fails.
 
         webrtcbin keeps credentials inside the URI, so config.turn_server_uris
         reshapes them.  The multiple-server signal is used rather than the
@@ -906,6 +913,25 @@ class WebRTCSender:
 
         Safe to call with nothing to do: a LAN-only setup never receives any.
         """
+        stun_uri = config.stun_server_uri()
+
+        if stun_uri:
+            self.webrtc.set_property(
+                "stun-server",
+                stun_uri
+            )
+
+            print(
+                "[WebRTC] STUN server set:",
+                stun_uri
+            )
+        else:
+            print(
+                "[WebRTC] no STUN server configured -- the sender will offer"
+                " host candidates only, which nothing outside this LAN can"
+                " reach"
+            )
+
         uris = config.turn_server_uris(self.turn_credentials)
 
         if not uris:
@@ -931,10 +957,10 @@ class WebRTCSender:
             "[WebRTC] Negotiation needed"
         )
 
-        # The last moment that still matters: the ICE agent reads the TURN
-        # configuration when the offer is built, so anything set after this
-        # changes nothing for this negotiation.
-        self.apply_turn_servers()
+        # The last moment that still matters: the ICE agent reads the STUN and
+        # TURN configuration when the offer is built, so anything set after
+        # this changes nothing for this negotiation.
+        self.apply_ice_servers()
 
         promise = Gst.Promise.new_with_change_func(
             self.on_offer_created,

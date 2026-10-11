@@ -207,6 +207,33 @@ def describe():
     return lines
 
 
+def stun_server_uri():
+    """The single STUN URI webrtcbin accepts, or None.
+
+    webrtcbin has a `stun-server` property rather than a multiple-server
+    signal, so only the first configured stun: entry is used.  One is enough:
+    the sender only needs some server to tell it its own public mapping, which
+    is the thing that makes it reachable at all.
+
+    Without this the sender gathers host candidates only -- private addresses a
+    browser on another network cannot reach -- and internet P2P has nothing to
+    aim at.
+    """
+    for piece in STUN_URL.split(","):
+        url = piece.strip()
+
+        if not url.startswith("stun:"):
+            continue
+
+        parts = urlsplit(url)
+        host = parts.netloc or parts.path
+
+        if host:
+            return "stun://" + host
+
+    return None
+
+
 def turn_server_uris(credentials):
     """TURN URIs with the credentials inlined, in webrtcbin's format.
 
