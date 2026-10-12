@@ -1835,24 +1835,6 @@ function updateMatchedLatency(
         return;
     }
 
-    latencyCaptureCallbackElement.textContent =
-        formatLatency(captureToCallback);
-
-    if (!decompositionMeaningful) {
-
-        /*
-         * The total is still the best estimate available, but it inherits the
-         * same uncertainty, and saying so is the difference between a
-         * measurement and a number.
-         */
-        latencyMetadataElement.textContent =
-            "clock sync \u00b1"
-            + (offsetUncertaintyMs === null
-                ? "?"
-                : offsetUncertaintyMs.toFixed(1) + " ms")
-            + " \u2014 stage split not shown";
-    }
-
     /*
      * How far the clock offset can be out.
      *
@@ -1875,6 +1857,24 @@ function updateMatchedLatency(
     const decompositionMeaningful =
         Number.isFinite(offsetUncertaintyMs)
         && offsetUncertaintyMs <= 10;
+
+    latencyCaptureCallbackElement.textContent =
+        formatLatency(captureToCallback);
+
+    if (!decompositionMeaningful) {
+
+        /*
+         * The total is still the best estimate available, but it inherits the
+         * same uncertainty, and saying so is the difference between a
+         * measurement and a number.
+         */
+        latencyMetadataElement.textContent =
+            "clock sync \u00b1"
+            + (offsetUncertaintyMs === null
+                ? "?"
+                : offsetUncertaintyMs.toFixed(1) + " ms")
+            + " \u2014 stage split not shown";
+    }
 
     if (Number.isFinite(receiveEpochMs) && decompositionMeaningful) {
 
