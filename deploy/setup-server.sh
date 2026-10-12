@@ -57,11 +57,50 @@ PRIVATE_IP="$(hostname -I | awk '{print $1}')"
 
 # Aliyun publishes instance metadata on a link-local address, reachable before
 # any outbound connectivity exists.
-PUBLIC_IP="$(curl -fsS --max-time 3 http://100.100.100.200/latest/meta-data/public-ipv4 2>/dev/null || true)"
-if [ -z "$PUBLIC_IP" ]; then
-    PUBLIC_IP="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+#
+# The field is `eipv4`, NOT `public-ipv4`.  Querying the latter returns an HTML
+# 404 body, which a plain command substitution happily stores as if it were an
+# address.  The previous single fallback was api.ipify.org, which from a Beijing
+# instance answered "Connection refused".  Between the two, this script died
+# with "could not determine the public IP" on the very platform it targets.
+# Measured 2026-10-12; checkip.amazonaws.com and ipinfo.io/ip both worked.
+#
+# DSH_PUBLIC_IP overrides everything, for hosts where detection cannot work or
+# where a different address should be advertised.
+if [ -n "${DSH_PUBLIC_IP:-}" ]; then
+    PUBLIC_IP="$DSH_PUBLIC_IP"
+    log "using DSH_PUBLIC_IP from the environment"
+else
+    for source in \
+        "http://100.100.100.200/latest/meta-data/eipv4" \
+        "http://100.100.100.200/latest/meta-data/public-ipv4" \
+        "https://checkip.amazonaws.com" \
+        "https://ipinfo.io/ip" \
+        "https://api.ipify.org"
+    do
+        candidate="$(curl -fsS --max-time 5 "$source" 2>/dev/null | tr -d '[:space:]' || true)"
+
+        # Reject anything that is not four dotted decimal octets.  Without this,
+        # an HTML error body is accepted as an address and turns into nonsense
+        # further down (in turnserver.conf and the client-facing URLs).
+        case "$candidate" in
+            ''|*[!0-9.]*) candidate="" ;;
+        esac
+        if [ -n "$candidate" ] && [ "$(printf '%s' "$candidate" | tr -cd '.' | wc -c)" != "3" ]; then
+            candidate=""
+        fi
+
+        if [ -n "$candidate" ]; then
+            PUBLIC_IP="$candidate"
+            echo "    public IP from: $source"
+            break
+        fi
+    done
 fi
-[ -n "$PUBLIC_IP" ] || die "could not determine the public IP"
+
+if [ -z "$PUBLIC_IP" ]; then
+    die "could not determine the public IP -- set DSH_PUBLIC_IP=<address> and re-run"
+fi
 
 echo "    private : $PRIVATE_IP"
 echo "    public  : $PUBLIC_IP"
@@ -69,7 +108,23 @@ echo "    public  : $PUBLIC_IP"
 log "installing packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq coturn python3-websockets curl
+apt-get install -y -qq coturn curl python3-pip
+
+# websockets must be >= 13.  signaling_server.py uses websockets.asyncio, which
+# does not exist in Ubuntu 22.04's python3-websockets (10.3); installing only
+# from apt leaves the signalling service unable to start, with a bare
+# ImportError as the only clue.  Install a suitable version when needed.
+if python3 -c 'import websockets,sys; sys.exit(0 if int(websockets.__version__.split(".")[0]) >= 13 else 1)' 2>/dev/null; then
+    echo "    websockets already new enough: $(python3 -c 'import websockets;print(websockets.__version__)')"
+else
+    echo "    installing websockets >= 13 (Ubuntu ships 10.3, which this code cannot use)"
+    python3 -m pip install --quiet --upgrade pip 2>/dev/null || true
+    python3 -m pip install --quiet --break-system-packages 'websockets>=13' 2>/dev/null \
+        || python3 -m pip install --quiet 'websockets>=13' 2>/dev/null \
+        || apt-get install -y -qq python3-websockets 2>/dev/null \
+        || true
+    python3 -c 'import websockets; print("    websockets now:", websockets.__version__, websockets.__file__)' 2>&1 | sed 's/^/  /'
+fi
 
 log "writing /etc/turnserver.conf"
 TMP_CONF="$(mktemp)"
