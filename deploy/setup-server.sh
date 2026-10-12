@@ -278,7 +278,18 @@ deployed
 
   public IP   : $PUBLIC_IP
 
-  page        : http://$PUBLIC_IP:8000/index_latency.html?token=$DSH_ACCESS_TOKEN
+  page        : http://$PUBLIC_IP:8765/index_latency.html?token=<token>
+
+  The page is served on the same port as the signalling websocket (8765), which
+  keeps them same-origin.
+
+  The access token is deliberately NOT printed here -- it is a long-lived
+  credential, and a summary that prints it leaks it into terminal scrollback,
+  logs, or anywhere the output is pasted.  Read it when you need it:
+
+      grep ^DSH_ACCESS_TOKEN /etc/dsh-camera/env
+
+  A ready-made URL, also mode 600, is at /root/access-url.txt if it was written.
   signalling  : ws://$PUBLIC_IP:8765/?token=<token>
   STUN        : stun:$PUBLIC_IP:3478
   TURN        : turn:$PUBLIC_IP:3478?transport=udp
