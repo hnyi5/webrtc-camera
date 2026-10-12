@@ -9,9 +9,10 @@ the browser actually needs.
 
     python3 serve_page.py [port]        # default 8000
 
-Running it as a real handler (rather than http.server) also gives somewhere to
-put the time-limited TURN credential endpoint that the public deployment needs,
-so the browser never has to be given a long-lived secret.
+The time-limited TURN credentials a public deployment needs are NOT issued
+here -- they come from signaling_server.py's send_turn_credentials(), which
+sends them as the first message on an authenticated socket so the browser is
+never given a long-lived secret.
 """
 
 import http.server

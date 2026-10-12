@@ -78,7 +78,14 @@ class WebRTCSender:
         # upstream instead of silently shifting the pairing by one frame.
         self.source_frames = deque()
 
-        self.rtp_mapping_queue = []
+        # Bounded, unlike the list this used to be.
+        #
+        # flush_rtp_mappings() takes at most 20 per tick and returns early while
+        # the signalling socket is down, so a main loop that stalls -- which
+        # this project has watched happen -- let this grow without limit.  A
+        # mapping older than a few seconds is useless anyway: the page keeps
+        # only a 120-frame window to match against.
+        self.rtp_mapping_queue = deque(maxlen=600)
 
         self.last_rtp_timestamp = None
 
@@ -547,6 +554,13 @@ class WebRTCSender:
         rate = (100.0 * matched / total) if total else 0.0
 
         print(
+            # A liveness check, NOT a correctness check.
+            #
+            # rate only shows that a mapping was popped for each frame.  Because
+            # pts_offset is re-anchored from the frame just popped, a single
+            # mis-pairing becomes self-consistent and still reports 100%.  What
+            # actually supports these numbers is the optical cross-check in
+            # docs/TECHNICAL_NOTES.md 31.5 -- not this line.
             f"[MAP] matched={matched} missed={missed} "
             f"rate={rate:.1f}% offset={offset} "
             f"offset_fixes={adjustments} last_delta={last_delta} "
@@ -1033,8 +1047,6 @@ class WebRTCSender:
             "[WebRTC] Setting remote SDP answer"
         )
 
-        self.remote_answer_set = True
-
         result, sdp_message = (
             GstSdp.sdp_message_new_from_text(
                 sdp_text
@@ -1048,6 +1060,15 @@ class WebRTCSender:
             )
 
             return False
+
+        # Only once there is an answer worth remembering.
+        #
+        # This used to be set before the parse.  A malformed answer then left
+        # the flag true with nothing negotiated: request_offer() saw it, quit
+        # the loop, the supervisor restarted the pipeline, and the same bad
+        # answer came back -- a restart every couple of seconds whose log read
+        # like normal recovery.
+        self.remote_answer_set = True
 
         answer = (
             GstWebRTC.WebRTCSessionDescription.new(
@@ -1090,8 +1111,11 @@ class WebRTCSender:
             {
                 "type": "candidate",
                 "candidate": candidate,
-                "sdpMLineIndex": mlineindex,
-                "sdpMid": "video0"
+                "sdpMLineIndex": mlineindex
+                # No sdpMid on purpose.  The mid is a name webrtcbin picks
+                # ("video0" happened to match today), and the browser matches
+                # candidates on sdpMLineIndex anyway -- so a stale mid would be
+                # a wrong fact sent for no benefit.
             }
         )
 

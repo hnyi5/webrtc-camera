@@ -88,7 +88,24 @@ sed -i 's/^#\?TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn
 systemctl enable coturn >/dev/null 2>&1 || true
 systemctl restart coturn
 
-log "appending deployment values to $ENV_FILE"
+log "writing deployment values to $ENV_FILE"
+
+# Replace, do not append.
+#
+# This used to be a bare `} >> "$ENV_FILE"`, so every re-run stacked another
+# copy of the same keys.  The last write wins, so it kept working -- but the
+# file grew without bound, and after the public IP changed, stale lines sat
+# above the current ones.  The header of this script already promised
+# idempotence; this makes it true.
+if [ -f "$ENV_FILE" ]; then
+    # Everything from our marker onwards is ours to redo.
+    sed -i '/^# --- written by setup-server.sh ---$/,$d' "$ENV_FILE"
+
+    # And bare copies of the keys we are about to set, from versions that
+    # wrote them before the marker existed.
+    sed -i -E '/^(DSH_TURN_URL|DSH_STUN_URL|DSH_SIGNALING_HOST|DSH_SIGNALING_PORT|DSH_PAGE_PORT|DSH_DAILY_TX_BUDGET_GB)=/d' "$ENV_FILE"
+fi
+
 umask 077
 {
     echo ""
@@ -167,13 +184,36 @@ systemctl restart dsh-signaling dsh-page dsh-traffic-guard
 sleep 3
 
 log "state"
-systemctl is-active coturn dsh-signaling dsh-page dsh-traffic-guard || true
+
+# `|| true` here meant a unit that failed to start still reached the success
+# banner below.  Record whether they are all up, and say which are not.
+SERVICES_OK=1
+for unit in coturn dsh-signaling dsh-page dsh-traffic-guard; do
+    state="$(systemctl is-active "$unit" 2>/dev/null || true)"
+    printf '  %-18s %s\n' "$unit" "$state"
+    [ "$state" = "active" ] || SERVICES_OK=0
+done
 
 log "traffic guard"
 python3 "$REPO_ROOT/deploy/traffic_guard.py" --status \
     --budget-gb "${DSH_DAILY_TX_BUDGET_GB:-5}" 2>/dev/null || true
 echo
 ss -tulnp | grep -E ':(3478|8765|8000|443)\b' || true
+
+if [ "$SERVICES_OK" != "1" ]; then
+
+cat <<EOF
+
+==========================================================================
+NOT DEPLOYED - at least one service is not active
+==========================================================================
+
+  Fix the units listed above, then re-run this script.  Nothing here is
+  running, so the addresses below would not answer.
+EOF
+
+    exit 1
+fi
 
 cat <<EOF
 

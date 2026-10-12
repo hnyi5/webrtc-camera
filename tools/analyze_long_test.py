@@ -121,14 +121,40 @@ if bitrate:
 
 print()
 
+# A clock step is not drift.
+#
+# This used to print offsets[-1] - offsets[0] as "drift".  A step -- measured at
+# over 200 ms in a single jump in this project -- lands entirely inside that
+# difference and can flip its sign, so the number described the step while
+# claiming to describe the clock.  Steps are now reported separately, and a rate
+# is only quoted when there were none.
+CLOCK_STEP_MS = 50.0
+
 offsets = [v for v in (number(r.get("clockOffset")) for r in samples) if v is not None]
 if offsets:
-    drift = offsets[-1] - offsets[0]
-    span_min = (last["t"] - first["t"]) / 60000
+    steps = [
+        i for i in range(1, len(offsets))
+        if abs(offsets[i] - offsets[i - 1]) > CLOCK_STEP_MS
+    ]
+
     print(f"clock offset: first {offsets[0]:.1f} ms  last {offsets[-1]:.1f} ms  "
-          f"drift {drift:+.1f} ms over {span_min:.0f} min "
-          f"({drift / max(span_min, 1) * 60:+.1f} ms/h)")
-    print(f"              min {min(offsets):.1f}  max {max(offsets):.1f}")
+          f"min {min(offsets):.1f}  max {max(offsets):.1f}")
+
+    net_change = offsets[-1] - offsets[0]
+
+    if steps:
+        biggest = max(abs(offsets[i] - offsets[i - 1]) for i in steps)
+        span_min = (last["t"] - first["t"]) / 60000
+        print(f"              {len(steps)} clock step(s) over {CLOCK_STEP_MS:.0f} ms, "
+              f"largest {biggest:.1f} ms")
+        print(f"              net change {net_change:+.1f} ms over {span_min:.0f} min")
+        print("              NOT reported as a drift rate: a step is in that figure,")
+        print("              and drift across it would be meaningless.")
+    else:
+        span_min = (last["t"] - first["t"]) / 60000
+        print(f"              no steps; net change {net_change:+.1f} ms "
+              f"over {span_min:.0f} min "
+              f"({net_change / max(span_min, 1) * 60:+.1f} ms/h)")
 
 print()
 

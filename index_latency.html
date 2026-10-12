@@ -689,6 +689,15 @@ const icePathElement =
 /* Throttle for the ICE summary log, which runs on every stats poll. */
 let lastIceSummaryMs = 0;
 
+/*
+ * How many stats polls in a row have failed.
+ *
+ * Without this a failing getStats() was invisible: console.error is not part of
+ * the panel, so every metric simply froze at its last value, which is
+ * indistinguishable from a healthy connection with nothing new to report.
+ */
+let consecutiveStatsFailures = 0;
+
 const overlayResolution =
     document.getElementById("overlayResolution");
 
@@ -1186,6 +1195,30 @@ pc.oniceconnectionstatechange = () => {
 
         iceConnectionElement.className =
             "stat-value bad";
+
+        /*
+         * ICE has failed.  Chrome usually lifts this to connectionState, which
+         * is handled above -- but not always, and when it does not, the page
+         * sits there showing a coloured row while nothing can arrive.
+         *
+         * Only "failed" reloads.  "disconnected" is routinely transient -- ICE
+         * re-checks and recovers on its own -- so reloading on it would turn a
+         * blip into a reload loop.
+         */
+        if (state === "failed") {
+
+            log(
+                "[WEBRTC] ICE connection failed"
+            );
+
+            scheduleReload("ICE connection failed");
+        }
+        else {
+
+            log(
+                "[WEBRTC] ICE disconnected (may recover on its own)"
+            );
+        }
     }
     else {
 
@@ -3069,13 +3102,39 @@ async function updateStats() {
             );
         }
 
+        /* Stats came back, so any run of failures is over. */
+        consecutiveStatsFailures = 0;
+
     }
     catch (error) {
+
+        consecutiveStatsFailures++;
 
         console.error(
             "getStats() error:",
             error
         );
+
+        if (consecutiveStatsFailures === 5) {
+
+            videoState.textContent =
+                "getStats() failing (" +
+                consecutiveStatsFailures +
+                ")";
+
+            latencyMetadataElement.textContent =
+                "stats unavailable - getStats() keeps failing";
+        }
+
+        /*
+         * The page cannot measure anything without stats, so a run this long
+         * means the peer connection itself is in trouble.  Reloading is the
+         * same recovery every other failure path uses.
+         */
+        if (consecutiveStatsFailures === 15) {
+
+            scheduleReload("getStats() failing");
+        }
     }
 }
 
