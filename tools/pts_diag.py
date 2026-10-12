@@ -30,22 +30,17 @@ Gst.init(None)
 
 RUN_SECONDS = int(sys.argv[1]) if len(sys.argv) > 1 else 6
 
+# The pipeline the sender actually builds.
+#
+# This used to insert an I420 -> BGR -> I420 round trip of its own, which the
+# sender no longer has.  Diagnosing PTS behaviour on a pipeline that differs
+# from the one being measured is worse than not diagnosing it: the conversion
+# costs roughly 8 ms and changes how buffers are timed, so the numbers looked
+# plausible and described the wrong thing.
 PIPELINE = f"""
-    v4l2src name=cam device={config.VIDEO_DEVICE} io-mode=mmap
-    !
-    {config.VIDEO_CAPS}
-    !
-    jpegdec name=jdec
-    !
-    videoconvert name=conv1
-    !
-    video/x-raw,format=BGR
+    {config.video_source_description()}
     !
     identity name=timestamp_probe
-    !
-    videoconvert name=conv2
-    !
-    video/x-raw,format=I420
     !
     x264enc name=enc tune=zerolatency speed-preset=ultrafast bitrate=4000 key-int-max=30
     !
@@ -61,11 +56,7 @@ PIPELINE = f"""
 """
 
 TARGETS = [
-    ("v4l2src.src", "cam", "src"),
-    ("jpegdec.src", "jdec", "src"),
-    ("videoconvert1.src", "conv1", "src"),
     ("identity.src", "timestamp_probe", "src"),
-    ("videoconvert2.src", "conv2", "src"),
     ("x264enc.src", "enc", "src"),
     ("h264parse.src", "parse", "src"),
     ("rtph264pay.src", "pay", "src"),
