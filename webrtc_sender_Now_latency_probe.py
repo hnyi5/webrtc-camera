@@ -579,8 +579,17 @@ class WebRTCSender:
             if not self.rtp_mapping_queue:
                 return True
 
-            batch = self.rtp_mapping_queue[:20]
-            del self.rtp_mapping_queue[:20]
+            # Take up to 20 from the front, oldest first.
+            #
+            # This queue is a bounded deque so that a stalled main loop cannot
+            # grow it without limit.  A deque deliberately supports neither
+            # slicing nor `del d[:n]`; doing either raises TypeError, and the
+            # GLib wrapper around this callback reduces that to one log line, so
+            # the batch silently never leaves the process.  Use popleft().
+            batch = [
+                self.rtp_mapping_queue.popleft()
+                for _ in range(min(20, len(self.rtp_mapping_queue)))
+            ]
 
         self.send_signaling_message(
             {
