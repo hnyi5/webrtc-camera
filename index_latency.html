@@ -686,6 +686,49 @@ const peerConnectionElement =
 const icePathElement =
     document.getElementById("icePath");
 
+/*
+ * ICE path change tracking.
+ *
+ * ICE keeps probing pairs and will re-select while a session runs; each switch
+ * interrupts the media briefly.  Recording every transition -- with a counter
+ * and the labels involved -- is the only way to tell how often it happens and
+ * between which pair kinds, and the fix depends entirely on the latter.
+ *
+ * These declarations sit here, above every use, on purpose: a `let` read before
+ * its initialiser runs throws a ReferenceError (a temporal dead zone), and this
+ * file has already been bitten by exactly that once.
+ */
+let lastIcePathLabel = null;
+let icePathChangeCount = 0;
+
+function noteIcePath(label) {
+
+    if (label === lastIcePathLabel) {
+        return;
+    }
+
+    const previous = lastIcePathLabel;
+
+    lastIcePathLabel = label;
+
+    if (previous === null) {
+        log("[ICE] path selected: " + label);
+        return;
+    }
+
+    icePathChangeCount++;
+
+    log(
+        "[ICE] path CHANGED #" + icePathChangeCount +
+        " after " + ((Date.now() - icePathSince) / 1000).toFixed(1) + "s" +
+        ":  " + previous + "   ->   " + label
+    );
+
+    icePathSince = Date.now();
+}
+
+let icePathSince = Date.now();
+
 /* Throttle for the ICE summary log, which runs on every stats poll. */
 let lastIceSummaryMs = 0;
 
@@ -3078,6 +3121,8 @@ async function updateStats() {
                 else {
                     pathLabel += "  P2P";
                 }
+
+                noteIcePath(pathLabel);
 
                 icePathElement.textContent =
                     pathLabel;
