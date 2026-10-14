@@ -137,9 +137,10 @@ class WebRTCSender:
             application/x-rtp,media=video,encoding-name=H264,payload=96,clock-rate=90000
             !
             queue name=rtp_queue
-                max-size-buffers=32
+                max-size-buffers=0
                 max-size-bytes=0
-                max-size-time=0
+                max-size-time=100000000
+                leaky=2
         """
 
         print("[CONFIG] effective configuration:", flush=True)
@@ -203,6 +204,20 @@ class WebRTCSender:
         webrtc_factory.set_property(
             "bundle-policy",
             "max-bundle"
+        )
+
+        # webrtcbin buffers 200 ms in its jitterbuffers by default -- a
+        # video-conferencing default, and pure added latency for a live view.
+        # Verified with `gst-inspect-1.0 webrtcbin` on this machine (Default:
+        # 200) and the value was never set anywhere in this file.
+        #
+        # Honest caveat: the property describes the RECEIVE-side jitterbuffer,
+        # and this sender only sends, so it may be inert here.  It is set
+        # because it costs nothing and states the intent; the before/after
+        # measurement is what will say whether it did anything.
+        webrtc_factory.set_property(
+            "latency",
+            0
         )
 
         self.pipeline.add(

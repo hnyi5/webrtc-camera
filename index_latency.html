@@ -1035,6 +1035,34 @@ pc.ontrack = (event) => {
         video.srcObject =
             event.streams[0];
 
+        /*
+         * Turn the browser's jitter buffer down.
+         *
+         * Chrome's default is around 100 ms, because WebRTC targets video
+         * conferencing -- where absorbing jitter matters more than delay.  For
+         * a live view that is a straight addition to every number on this
+         * panel.  This has to happen here: ontrack is the first moment the
+         * receiver exists.
+         *
+         * Two APIs with DIFFERENT UNITS -- writing 0 into the wrong one is
+         * silently ineffective, which is the classic mistake:
+         *     receiver.jitterBufferTarget -- MILLISECONDS (Chrome 111+)
+         *     receiver.playoutDelayHint   -- SECONDS       (older)
+         * Both are attempted so whichever the browser implements takes effect.
+         */
+        if (event.receiver) {
+
+            if ("jitterBufferTarget" in event.receiver) {
+                event.receiver.jitterBufferTarget = 0;
+                log("[WEBRTC] jitterBufferTarget = 0 (ms)");
+            }
+
+            if ("playoutDelayHint" in event.receiver) {
+                event.receiver.playoutDelayHint = 0;
+                log("[WEBRTC] playoutDelayHint = 0 (s)");
+            }
+        }
+
         videoState.textContent =
             "Video track received";
 
