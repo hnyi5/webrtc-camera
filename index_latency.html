@@ -1108,8 +1108,8 @@ pc.ontrack = (event) => {
                  * be walked down deliberately (100 -> 50 -> 30) to find the
                  * smallest value that stays stable.
                  */
-                event.receiver.jitterBufferTarget = 100;
-                log("[WEBRTC] jitterBufferTarget = 100 (ms)");
+                event.receiver.jitterBufferTarget = 0;
+                log("[WEBRTC] jitterBufferTarget = 0 (ms)");
             }
 
             if ("playoutDelayHint" in event.receiver) {
