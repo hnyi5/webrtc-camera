@@ -1053,8 +1053,20 @@ pc.ontrack = (event) => {
         if (event.receiver) {
 
             if ("jitterBufferTarget" in event.receiver) {
-                event.receiver.jitterBufferTarget = 0;
-                log("[WEBRTC] jitterBufferTarget = 0 (ms)");
+                /*
+                 * 100 ms, not 0.
+                 *
+                 * Zero was set to shave latency, and it does -- but with a
+                 * genuinely static picture the encoder emits under 200 bytes
+                 * per frame, so a single lost packet costs every following
+                 * P frame until the next keyframe, and the picture freezes on
+                 * the last decodable frame.  100 ms is roughly Chrome's own
+                 * default and absorbs that.  Once the freeze is gone this can
+                 * be walked down deliberately (100 -> 50 -> 30) to find the
+                 * smallest value that stays stable.
+                 */
+                event.receiver.jitterBufferTarget = 100;
+                log("[WEBRTC] jitterBufferTarget = 100 (ms)");
             }
 
             if ("playoutDelayHint" in event.receiver) {
